@@ -30,6 +30,7 @@ func LoadManifest(path string) (*Manifest, []error) {
 	if err != nil {
 		return nil, append(errs, err)
 	}
+	defer file.Close()
 	alg, err := ManifestAglorithm(path)
 	if err != nil {
 		return nil, append(errs, err)

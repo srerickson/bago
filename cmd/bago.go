@@ -26,4 +26,7 @@ func main() {
 		fmt.Printf("%t %s\n", i, e)
 	}
 
+	s, _ := bago.Checksum(`/Users/sre53/Documents/Curation/Callahan-Flintoft/README.md`, `sha512`)
+	fmt.Println(s)
+
 }
