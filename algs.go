@@ -70,9 +70,3 @@ func Checksum(path string, alg string) (string, error) {
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
-
-func ChecksumConcurrent(path string, alg string, resultC chan string, errorC chan error) {
-	sum, err := Checksum(path, alg)
-	resultC <- sum
-	errorC <- err
-}

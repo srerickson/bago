@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
+	"sync"
 )
 
 var manifestLineRE = regexp.MustCompile(`^(\S+)\s+(\S.*\S)\s*$`)
@@ -23,8 +25,8 @@ func NewManifest(alg string) *Manifest {
 	return manifest
 }
 
-//LoadManifest reads and parses a manifest file
-func LoadManifest(path string) (*Manifest, []error) {
+//ReadManifest reads and parses a manifest file
+func ReadManifest(path string) (*Manifest, []error) {
 	errs := []error{}
 	file, err := os.Open(path)
 	if err != nil {
@@ -51,5 +53,69 @@ func LoadManifest(path string) (*Manifest, []error) {
 	if len(errs) > 0 {
 		return nil, errs
 	}
+	return manifest, nil
+}
+
+// GenerateManifest builds manifest for given path, performing checksum
+func GenerateManifest(path string, workers int, alg string) (*Manifest, error) {
+	var manifest = NewManifest(alg)
+	var wg, wg2 sync.WaitGroup
+
+	// channels
+	filenames := make(chan string)
+	checksums := make(chan [2]string)
+	errs := make(chan error)
+
+	// stream filenames by walking filepath
+	filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			fmt.Printf("error accessing a path %q: %v\n", path, err)
+			errs <- err
+			return nil
+		}
+		// skip directories
+		if info.Mode().IsDir() {
+			return nil
+		}
+		wg.Add(1)
+		go func(p string) {
+			defer wg.Done()
+			filenames <- p
+		}(p)
+		return nil
+	})
+
+	//checksum workers
+	for i := 0; i < workers; i++ {
+		wg2.Add(1)
+		go func() {
+			defer wg2.Done()
+			for f := range filenames {
+				sum, err := Checksum(f, alg)
+				if err != nil {
+					errs <- err
+				} else {
+					checksums <- [2]string{f, sum}
+				}
+			}
+		}()
+	}
+
+	// Channel Closers
+	go func() {
+		wg.Wait()
+		close(filenames)
+	}()
+	go func() {
+		wg2.Wait()
+		close(checksums)
+	}()
+
+	for sum := range checksums {
+		relPath, _ := filepath.Rel(path, sum[0])
+		manifest.entries[relPath] = sum[1]
+		fmt.Printf("%s %s\n", relPath, sum[1])
+	}
+
 	return manifest, nil
 }

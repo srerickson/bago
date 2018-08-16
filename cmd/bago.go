@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"os"
 
 	"github.com/srerickson/bago"
@@ -22,11 +21,7 @@ func main() {
 		os.Exit(1)
 	}
 	if validate {
-		i, e := bago.IsComplete(path)
-		fmt.Printf("%t %s\n", i, e)
+		b := bago.NewBag(path)
+		b.IsValid()
 	}
-
-	s, _ := bago.Checksum(`/Users/sre53/Documents/Curation/Callahan-Flintoft/README.md`, `sha512`)
-	fmt.Println(s)
-
 }
