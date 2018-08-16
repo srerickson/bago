@@ -2,6 +2,7 @@ package bago
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -14,7 +15,7 @@ const (
 type Bag struct {
 	path      string
 	version   string
-	manifests []Manifest
+	manifests map[string]*Manifest
 	persisted bool
 }
 
@@ -41,20 +42,30 @@ func (b *Bag) IsComplete() (bool, error) {
 		return false, err
 	}
 
-	manifests, err := filepath.Glob(filepath.Join(b.path, "manifest-*.txt"))
-	if len(manifests) == 0 {
+	manifestFiles, err := filepath.Glob(filepath.Join(b.path, "manifest-*.txt"))
+	if len(manifestFiles) == 0 {
 		return false, errors.New("missing manifest")
 	}
 	if err != nil {
 		return false, err
 	}
 
-	// manifest, errs := ReadManifest(manifests[0])
-	// if errs != nil {
-	// 	for e := range errs {
-	// 		fmt.Println(errs[e])
-	// 	}
-	// }
+	manifests := make(map[string]*Manifest, len(manifestFiles))
+
+	for _, f := range manifestFiles {
+		alg, err := ManifestAglorithm(f)
+		if err != nil {
+			return false, err
+		}
+		var errs []error
+		manifests[alg], errs = ParseManifest(f)
+		if errs != nil {
+			for _, e := range errs {
+				return false, e // fixme
+				// fmt.Println(errs[e])
+			}
+		}
+	}
 
 	return true, nil
 }
@@ -73,8 +84,7 @@ func (b *Bag) IsValid() (bool, error) {
 		return false, err
 	}
 
-	payloadDir := filepath.Join(b.path, "data")
-	GenerateManifest(payloadDir, 8, `sha512`)
+	fmt.Println("here")
 
 	// filepath.Walk(b.path, func(path string, info os.FileInfo, err error) error {
 	// 	fmt.Println(path)

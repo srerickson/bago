@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"os"
+	"path/filepath"
 
 	"github.com/srerickson/bago"
 )
@@ -21,7 +22,9 @@ func main() {
 		os.Exit(1)
 	}
 	if validate {
-		b := bago.NewBag(path)
-		b.IsValid()
+		// b := bago.NewBag(path)
+		// b.IsValid()
+		mb := &bago.ManifestBuilder{Path: filepath.Join(path, "data"), Workers: 4, Alg: `sha512`}
+		mb.Build()
 	}
 }
