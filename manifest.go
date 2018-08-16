@@ -18,6 +18,18 @@ type Manifest struct {
 	entries   map[string]string // map: path -> checksum
 }
 
+type fileWalk struct {
+	path string
+	info os.FileInfo
+	err  error
+}
+
+type checksum struct {
+	path string
+	hash string
+	err  error
+}
+
 // NewManifest returns an initialized manifest
 func NewManifest(alg string) *Manifest {
 	manifest := &Manifest{algorithm: alg}
@@ -56,47 +68,46 @@ func ReadManifest(path string) (*Manifest, []error) {
 	return manifest, nil
 }
 
+func fileWalker(path string) chan fileWalk {
+	files := make(chan fileWalk)
+	go func() {
+		// stream filenames by walking filepath
+		filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
+			if !info.Mode().IsDir() {
+				files <- fileWalk{path: p, info: info, err: err}
+			}
+			return err // should be nil. If not, walk stops
+		})
+		close(files)
+	}()
+	return files
+}
+
 // GenerateManifest builds manifest for given path, performing checksum
 func GenerateManifest(path string, workers int, alg string) (*Manifest, error) {
 	var manifest = NewManifest(alg)
-	var wg, wg2 sync.WaitGroup
+	var wg sync.WaitGroup
 
 	// channels
-	filenames := make(chan string)
-	checksums := make(chan [2]string)
-	errs := make(chan error)
-
-	// stream filenames by walking filepath
-	filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
-		if err != nil {
-			fmt.Printf("error accessing a path %q: %v\n", path, err)
-			errs <- err
-			return nil
-		}
-		// skip directories
-		if info.Mode().IsDir() {
-			return nil
-		}
-		wg.Add(1)
-		go func(p string) {
-			defer wg.Done()
-			filenames <- p
-		}(p)
-		return nil
-	})
+	filenames := fileWalker(path)
+	checksums := make(chan checksum)
 
 	//checksum workers
 	for i := 0; i < workers; i++ {
-		wg2.Add(1)
+		wg.Add(1)
 		go func() {
-			defer wg2.Done()
+			defer wg.Done()
 			for f := range filenames {
-				sum, err := Checksum(f, alg)
-				if err != nil {
-					errs <- err
-				} else {
-					checksums <- [2]string{f, sum}
+				if f.err != nil {
+					checksums <- checksum{f.path, ``, f.err}
+					break
 				}
+				sum, err := Checksum(f.path, alg)
+				if err != nil {
+					checksums <- checksum{f.path, ``, err}
+					break
+				}
+				checksums <- checksum{f.path, sum, nil}
 			}
 		}()
 	}
@@ -104,17 +115,13 @@ func GenerateManifest(path string, workers int, alg string) (*Manifest, error) {
 	// Channel Closers
 	go func() {
 		wg.Wait()
-		close(filenames)
-	}()
-	go func() {
-		wg2.Wait()
 		close(checksums)
 	}()
 
 	for sum := range checksums {
-		relPath, _ := filepath.Rel(path, sum[0])
-		manifest.entries[relPath] = sum[1]
-		fmt.Printf("%s %s\n", relPath, sum[1])
+		relPath, _ := filepath.Rel(path, sum.path)
+		manifest.entries[relPath] = sum.hash
+		fmt.Printf("%s %s\n", relPath, sum.hash)
 	}
 
 	return manifest, nil
