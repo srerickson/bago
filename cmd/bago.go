@@ -2,8 +2,8 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/srerickson/bago"
 )
@@ -24,7 +24,15 @@ func main() {
 	if validate {
 		// b := bago.NewBag(path)
 		// b.IsValid()
-		mb := &bago.ManifestBuilder{Path: filepath.Join(path, "data"), Workers: 4, Alg: `sha512`}
-		mb.Build()
+		// mb := &bago.ManifestBuilder{Path: filepath.Join(path, "data"), Workers: 4, Alg: `sha512`}
+		// mb.Build()
+		tf, err := bago.ParseTagFile(path)
+		if err != nil {
+			fmt.Println(err.Error())
+			os.Exit(1)
+		}
+		tf.Print()
+
 	}
+
 }

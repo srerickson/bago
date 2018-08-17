@@ -53,18 +53,16 @@ func (b *Bag) IsComplete() (bool, error) {
 	manifests := make(map[string]*Manifest, len(manifestFiles))
 
 	for _, f := range manifestFiles {
-		alg, err := ManifestAglorithm(f)
-		if err != nil {
-			return false, err
-		}
 		var errs []error
-		manifests[alg], errs = ParseManifest(f)
+		m, errs := ParseManifest(f)
 		if errs != nil {
 			for _, e := range errs {
 				return false, e // fixme
 				// fmt.Println(errs[e])
 			}
 		}
+		manifests[m.algorithm] = m
+
 	}
 
 	return true, nil

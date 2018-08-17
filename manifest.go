@@ -6,15 +6,18 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 )
-
-var manifestLineRE = regexp.MustCompile(`^(\S+)\s+(\S.*\S)\s*$`)
 
 //Manifest represents a payload manifest file
 type Manifest struct {
 	algorithm string
 	entries   map[string]string // map: path -> checksum
 }
+
+var manifestLineRE = regexp.MustCompile(`^(\S+)\s+(\S.*\S)\s*$`)
+
+var manifestFilenameRE = regexp.MustCompile(`.*manifest-(\w+).txt$`)
 
 // NewManifest returns an initialized manifest
 func NewManifest(alg string) *Manifest {
@@ -31,7 +34,7 @@ func ParseManifest(path string) (*Manifest, []error) {
 		return nil, append(errs, err)
 	}
 	defer file.Close()
-	alg, err := ManifestAglorithm(path)
+	alg, err := ParseManifestFilename(path)
 	if err != nil {
 		return nil, append(errs, err)
 	}
@@ -52,4 +55,20 @@ func ParseManifest(path string) (*Manifest, []error) {
 		return nil, errs
 	}
 	return manifest, nil
+}
+
+// ManifestAglorithm returns checksum algorithm from manifest's filename
+func ParseManifestFilename(filename string) (string, error) {
+	match := manifestFilenameRE.FindStringSubmatch(filename)
+	if len(match) == 0 {
+		return "", errors.New("Could not determine manifest's checksum algorithm")
+	}
+	alg := strings.ToLower(match[1])
+	for _, a := range AvailableAlgs {
+		if a == alg {
+			return alg, nil
+		}
+	}
+	msg := fmt.Sprintf("%s is not a recognized checksum algorithm", alg)
+	return alg, errors.New(msg)
 }
