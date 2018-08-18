@@ -36,7 +36,7 @@ func ParseTagFile(path string) (*TagFile, error) {
 	for scanner.Scan() {
 		line := scanner.Text()
 		lineNum++
-		err_msg := fmt.Sprintf("Syntax error %s: %d", path, lineNum)
+		errMsg := fmt.Sprintf("Syntax error %s: %d", path, lineNum)
 
 		// ignore empty lines
 		if emptyLineRE.MatchString(line) {
@@ -47,17 +47,17 @@ func ParseTagFile(path string) (*TagFile, error) {
 		if contLineRE.MatchString(line) {
 			l := len(tf.labels)
 			if l > 0 {
-				prev_label := tf.labels[l-1]
-				tf.tags[prev_label] += " " + strings.Trim(line, ` `)
+				prevLabel := tf.labels[l-1]
+				tf.tags[prevLabel] += " " + strings.Trim(line, ` `)
 				continue
 			}
-			return nil, errors.New(err_msg)
+			return nil, errors.New(errMsg)
 		}
 
 		// start of a new label/value pair
 		match := labelLineRe.FindStringSubmatch(line)
 		if len(match) < 3 {
-			return nil, errors.New(err_msg)
+			return nil, errors.New(errMsg)
 		}
 		label := strings.Trim(match[1], ` `)
 		value := strings.Trim(match[2], ` `)

@@ -13,6 +13,7 @@ import (
 	"os"
 )
 
+// SHA512 = `sha512`
 const (
 	SHA512 = `sha512`
 	SHA256 = `sha256`

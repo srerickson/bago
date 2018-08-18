@@ -5,19 +5,31 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
+)
+
+const (
+	tagManifest     = 1
+	payloadManifest = 2
 )
 
 //Manifest represents a payload manifest file
 type Manifest struct {
 	algorithm string
-	entries   map[string]string // map: path -> checksum
+	entries   map[string]string // map: p -> checksum
+	kind      int               // tagManifest || payloadManifest
 }
 
 var manifestLineRE = regexp.MustCompile(`^(\S+)\s+(\S.*\S)\s*$`)
 
 var manifestFilenameRE = regexp.MustCompile(`.*manifest-(\w+).txt$`)
+
+var payloadManifestFilenameRE = regexp.MustCompile(`^manifest-(\w+).txt$`)
+
+var tagManifestFilenameRE = regexp.MustCompile(`^tagmanifest-(\w+).txt$`)
 
 // NewManifest returns an initialized manifest
 func NewManifest(alg string) *Manifest {
@@ -26,49 +38,82 @@ func NewManifest(alg string) *Manifest {
 	return manifest
 }
 
-//ReadManifest reads and parses a manifest file
-func ParseManifest(path string) (*Manifest, []error) {
-	errs := []error{}
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, append(errs, err)
-	}
+// ParseManifest reads and parses a manifest file
+func ParseManifest(p string) (*Manifest, error) {
+	file, err := os.Open(p)
 	defer file.Close()
-	alg, err := ParseManifestFilename(path)
 	if err != nil {
-		return nil, append(errs, err)
+		return nil, err
 	}
-	manifest := NewManifest(alg)
+	manifest, err := NewManifestFromFilename(path.Base(p))
+	manifest.entries = make(map[string]string)
+	if err != nil {
+		return nil, err
+	}
 	lineNum := 0
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		lineNum++
 		match := manifestLineRE.FindStringSubmatch(scanner.Text())
 		if len(match) < 3 {
-			msg := fmt.Sprintf("error on line %d of %s", lineNum, path)
-			errs = append(errs, errors.New(msg))
-		} else {
-			manifest.entries[match[2]] = match[1]
+			msg := fmt.Sprintf("error on line %d of %s", lineNum, p)
+			return manifest, errors.New(msg)
 		}
-	}
-	if len(errs) > 0 {
-		return nil, errs
+		manifest.entries[match[2]] = match[1]
 	}
 	return manifest, nil
 }
 
-// ManifestAglorithm returns checksum algorithm from manifest's filename
-func ParseManifestFilename(filename string) (string, error) {
+// NewManifestFromFilename returns checksum algorithm from manifest's filename
+func NewManifestFromFilename(filename string) (*Manifest, error) {
+	manifest := &Manifest{}
+	// determine algorithm
 	match := manifestFilenameRE.FindStringSubmatch(filename)
-	if len(match) == 0 {
-		return "", errors.New("Could not determine manifest's checksum algorithm")
+	if len(match) < 2 {
+		return manifest, errors.New("Could not determine manifest algorithm")
 	}
 	alg := strings.ToLower(match[1])
 	for _, a := range AvailableAlgs {
 		if a == alg {
-			return alg, nil
+			manifest.algorithm = alg
+			break
 		}
 	}
-	msg := fmt.Sprintf("%s is not a recognized checksum algorithm", alg)
-	return alg, errors.New(msg)
+	if manifest.algorithm == `` {
+		msg := fmt.Sprintf("%s is not a recognized checksum algorithm", alg)
+		return manifest, errors.New(msg)
+	}
+	// determine manifest type
+	if payloadManifestFilenameRE.MatchString(filename) {
+		manifest.kind = payloadManifest
+	} else if tagManifestFilenameRE.MatchString(filename) {
+		manifest.kind = tagManifest
+	} else {
+		msg := fmt.Sprintf("Could not determine manifest type")
+		return manifest, errors.New(msg)
+	}
+	return manifest, nil
+}
+
+func ParseAllManifests(dir string) ([]*Manifest, error) {
+	//parse manifest files
+	mans := []*Manifest{}
+
+	manFiles, err := filepath.Glob(filepath.Join(dir, "*manifest-*.txt"))
+	if err != nil {
+		return mans, err
+	}
+	if len(manFiles) == 0 {
+		return mans, errors.New(`No manifest files found`)
+	}
+
+	for _, f := range manFiles {
+		var m *Manifest
+		m, err = ParseManifest(f)
+		if err != nil {
+			return mans, err
+		}
+		mans = append(mans, m)
+	}
+	return mans, nil
 }

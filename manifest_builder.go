@@ -2,7 +2,6 @@ package bago
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"sync"
 )
@@ -15,43 +14,39 @@ type ManifestBuilder struct {
 	// includeHidden
 }
 
-type fileinfo struct {
-	path string
-	info os.FileInfo
-	err  error
-}
-
 type checksum struct {
 	path string
 	hash string
+	size int64
 	err  error
 }
 
 // Build builds manifest for given path, performing checksum
-func (b *ManifestBuilder) Build() (*Manifest, error) {
-	var manifest = NewManifest(b.Alg)
-	var wg sync.WaitGroup
-
-	// channels
-	filenames := fileWalker(b.Path)
+func (b *ManifestBuilder) Build(files chan fileInfo) (*Manifest, error) {
+	manifest := NewManifest(b.Alg)
 	checksums := make(chan checksum)
+	var wg sync.WaitGroup
 
 	//checksum workers
 	for i := 0; i < b.Workers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for f := range filenames {
+			for f := range files {
 				if f.err != nil {
-					checksums <- checksum{f.path, ``, f.err}
+					checksums <- checksum{f.path, ``, 0, f.err}
 					break
 				}
-				sum, err := Checksum(f.path, b.Alg)
+				var err error
+				sum := ``
+				size := f.info.Size()
+				if b.Alg != "" {
+					sum, err = Checksum(f.path, b.Alg)
+				}
+				checksums <- checksum{f.path, sum, size, err}
 				if err != nil {
-					checksums <- checksum{f.path, ``, err}
 					break
 				}
-				checksums <- checksum{f.path, sum, nil}
 			}
 		}()
 	}
@@ -68,19 +63,13 @@ func (b *ManifestBuilder) Build() (*Manifest, error) {
 	return manifest, nil
 }
 
-// helper function that streams filenames to the retuned channel
-func fileWalker(path string) chan fileinfo {
-	files := make(chan fileinfo)
-	go func(path string) {
-		// stream filenames by walking filepath
-    fmt.Println(path)
-		filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
-			if !info.Mode().IsDir() {
-				files <- fileinfo{path: p, info: info, err: err}
-			}
-			return err // should be nil. If not, walk stops
-		})
-		close(files)
-	}(path)
-	return files
+func (b *ManifestBuilder) BuildList(files []fileInfo) (*Manifest, error) {
+	filechan := make(chan fileInfo)
+	go func(files []fileInfo) {
+		for _, f := range files {
+			filechan <- f
+		}
+		close(filechan)
+	}(files)
+	return b.Build(filechan)
 }

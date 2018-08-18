@@ -22,17 +22,19 @@ func main() {
 		os.Exit(1)
 	}
 	if validate {
-		// b := bago.NewBag(path)
-		// b.IsValid()
-		// mb := &bago.ManifestBuilder{Path: filepath.Join(path, "data"), Workers: 4, Alg: `sha512`}
-		// mb.Build()
-		tf, err := bago.ParseTagFile(path)
+		bag, err := bago.LoadBag(path)
 		if err != nil {
 			fmt.Println(err.Error())
 			os.Exit(1)
 		}
-		tf.Print()
-
+		_, err = bag.IsValid()
+		if err != nil {
+			fmt.Println(err.Error())
+			os.Exit(1)
+		} else {
+			fmt.Println("valid")
+		}
+		bag.Print()
 	}
 
 }
