@@ -34,7 +34,7 @@ func LoadBag(path string) (*Bag, error) {
 		return nil, errors.New(`'data' is not a directory`)
 	}
 
-	bagitTags, err := ParseTagFile(filepath.Join(path, `bagit.txt`))
+	bagitTags, err := ReadTagFile(filepath.Join(path, `bagit.txt`))
 	if err != nil {
 		return nil, err
 	}

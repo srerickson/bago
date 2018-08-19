@@ -17,11 +17,12 @@ import (
 const (
 	SHA512 = `sha512`
 	SHA256 = `sha256`
+	SHA224 = `sha224`
 	SHA1   = `sha1`
 	MD5    = `md5`
 )
 
-var AvailableAlgs = [4]string{SHA512, SHA256, SHA1, MD5}
+var availableAlgs = [...]string{SHA512, SHA256, SHA224, SHA1, MD5}
 
 // Checksum returns checksum for file with given path using given algorithm
 func Checksum(path string, alg string) (string, error) {
@@ -49,6 +50,8 @@ func newHash(alg string) (hash.Hash, error) {
 		h = sha512.New()
 	case SHA256:
 		h = sha256.New()
+	case SHA224:
+		h = sha256.New224()
 	case SHA1:
 		h = sha1.New()
 	case MD5:

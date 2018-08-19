@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"strings"
@@ -21,22 +22,17 @@ func NewTagFile() *TagFile {
 	return tf
 }
 
-func ParseTagFile(path string) (*TagFile, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
+func ParseTags(reader io.Reader) (*TagFile, error) {
 	tf := NewTagFile()
 	lineNum := 0
 	emptyLineRE := regexp.MustCompile(`^\s*$`)
 	labelLineRe := regexp.MustCompile(`^([^:\s][^:]*):(.*)`)
 	contLineRE := regexp.MustCompile(`^\s+\S+`)
-
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
 		line := scanner.Text()
 		lineNum++
-		errMsg := fmt.Sprintf("Syntax error %s: %d", path, lineNum)
+		errMsg := fmt.Sprintf("Syntax error at line: %d", lineNum)
 
 		// ignore empty lines
 		if emptyLineRE.MatchString(line) {
@@ -65,6 +61,20 @@ func ParseTagFile(path string) (*TagFile, error) {
 		tf.labels = append(tf.labels, label)
 	}
 	return tf, nil
+}
+
+func ReadTagFile(path string) (*TagFile, error) {
+	file, err := os.Open(path)
+	defer file.Close()
+	if err != nil {
+		return nil, err
+	}
+	tags, err := ParseTags(io.Reader(file))
+	if err != nil {
+		msg := fmt.Sprintf("While reading %s: %s", path, err.Error())
+		return nil, errors.New(msg)
+	}
+	return tags, err
 }
 
 func (tf *TagFile) Print() {

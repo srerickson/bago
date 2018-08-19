@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -8,32 +9,39 @@ import (
 	"github.com/srerickson/bago"
 )
 
-var validate bool
-var path string
+var (
+	validate bool
+	quiet    bool
+	path     string
+)
 
 func init() {
 	flag.BoolVar(&validate, "validate", false, "validate bag")
+	flag.BoolVar(&quiet, "quiet", false, "no ouput (on STDOUT)")
+
+}
+
+func handleErr(err error) {
+	if err != nil {
+		if !quiet {
+			fmt.Fprintln(os.Stderr, err)
+		}
+		os.Exit(1)
+	}
 }
 
 func main() {
 	flag.Parse()
 	path = flag.Arg(0)
-	if path == "" {
-		os.Exit(1)
+	if path == `` {
+		err := errors.New(`no path given`)
+		handleErr(err)
 	}
 	if validate {
 		bag, err := bago.LoadBag(path)
-		if err != nil {
-			fmt.Println(err.Error())
-			os.Exit(1)
-		}
+		handleErr(err)
 		_, err = bag.IsValid()
-		if err != nil {
-			fmt.Println(err.Error())
-			os.Exit(1)
-		} else {
-			fmt.Println("valid")
-		}
+		handleErr(err)
 		bag.Print()
 	}
 
