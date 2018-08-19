@@ -57,7 +57,7 @@ func (b *ManifestBuilder) Build(files chan fileInfo) (*Manifest, error) {
 	}()
 	for sum := range checksums {
 		relPath, _ := filepath.Rel(b.Path, sum.path)
-		manifest.entries[relPath] = sum.hash
+		manifest.entries[encodePath(relPath)] = ManifestEntry{rawPath: sum.path, sum: sum.hash}
 		fmt.Printf("%s %s\n", relPath, sum.hash)
 	}
 	return manifest, nil

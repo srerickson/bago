@@ -18,10 +18,11 @@ func fileWalker(path string) chan fileInfo {
 	go func(path string) {
 		// stream filenames by walking filepath
 		filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
-			if !info.Mode().IsDir() {
-				files <- fileInfo{path: p, info: info, err: err}
+			if err == nil && info != nil && info.IsDir() {
+				return nil // skip directories
 			}
-			return err // should be nil. If not, walk stops
+			files <- fileInfo{path: p, info: info, err: err}
+			return err // should be nil. If not, filepath.Walk stops
 		})
 		close(files)
 	}(path)

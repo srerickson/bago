@@ -11,6 +11,7 @@ import (
 	"hash"
 	"io"
 	"os"
+	"strings"
 )
 
 // SHA512 = `sha512`
@@ -23,6 +24,25 @@ const (
 )
 
 var availableAlgs = [...]string{SHA512, SHA256, SHA224, SHA1, MD5}
+
+func AlgIsAvailabe(alg string) bool {
+	for _, a := range availableAlgs {
+		if a == alg {
+			return true
+		}
+	}
+	return false
+}
+
+func NormalizeAlgName(alg string) (string, error) {
+	alg = strings.Replace(alg, `-`, ``, 1)
+	alg = strings.ToLower(alg)
+	if AlgIsAvailabe(alg) {
+		return alg, nil
+	}
+	msg := fmt.Sprintf(`Uknown checksum algorithm: %s`, alg)
+	return ``, errors.New(msg)
+}
 
 // Checksum returns checksum for file with given path using given algorithm
 func Checksum(path string, alg string) (string, error) {

@@ -42,7 +42,7 @@ func main() {
 		handleErr(err)
 		_, err = bag.IsValid()
 		handleErr(err)
-		bag.Print()
+		// bag.Print()
 	}
 
 }

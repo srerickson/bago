@@ -13,6 +13,7 @@ import (
 type TagFile struct {
 	labels []string
 	tags   map[string]string
+	hasBOM bool // byte order mark present in tagfile?
 }
 
 func NewTagFile() *TagFile {
@@ -30,8 +31,21 @@ func ParseTags(reader io.Reader) (*TagFile, error) {
 	contLineRE := regexp.MustCompile(`^\s+\S+`)
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
-		line := scanner.Text()
 		lineNum++
+		line := scanner.Text()
+
+		// check for BOM
+		if lineNum == 1 {
+			line = strings.Map(func(r rune) rune {
+				if r == '\uFEFF' {
+					tf.hasBOM = true
+					return -1
+				}
+				return r
+			}, line)
+
+		}
+
 		errMsg := fmt.Sprintf("Syntax error at line: %d", lineNum)
 
 		// ignore empty lines
