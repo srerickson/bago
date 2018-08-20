@@ -60,9 +60,13 @@ func ParseManifestEntries(reader io.Reader) (map[string]ManifestEntry, error) {
 			msg := fmt.Sprintf("Duplicate manifest entry at line: %d", lineNum)
 			return nil, errors.New(msg)
 		}
-		rawPath := match[2]
+		cleanPath := filepath.Clean(decodePath(match[2]))
+		if strings.HasPrefix(cleanPath, `..`) {
+			msg := fmt.Sprintf("Out of scope path at line: %d", lineNum)
+			return nil, errors.New(msg)
+		}
 		sum := strings.Trim(match[1], ` `)
-		entries[encodePath(rawPath)] = ManifestEntry{rawPath: rawPath, sum: sum}
+		entries[encodePath(cleanPath)] = ManifestEntry{rawPath: cleanPath, sum: sum}
 	}
 	return entries, nil
 }
@@ -133,28 +137,14 @@ func encodePath(s string) string {
 	s = strings.Replace(s, `%`, `%25`, -1)
 	s = strings.Replace(s, "\r", `%0D`, -1)
 	s = strings.Replace(s, "\n", `%0A`, -1)
-	if os.PathSeparator != bagitPathSeparator {
-		s = strings.Map(func(r rune) rune {
-			if r == os.PathSeparator {
-				return bagitPathSeparator
-			}
-			return r
-		}, s)
-	}
+	s = filepath.ToSlash(s)
 	return s
 }
 
 func decodePath(s string) string {
 	lf := regexp.MustCompile(`(%0[Aa])`)
 	cr := regexp.MustCompile(`(%0[Dd])`)
-	if os.PathSeparator != bagitPathSeparator {
-		s = strings.Map(func(r rune) rune {
-			if r == bagitPathSeparator {
-				return os.PathSeparator
-			}
-			return r
-		}, s)
-	}
+	s = filepath.FromSlash(s)
 	s = lf.ReplaceAllString(s, "\n")
 	s = cr.ReplaceAllString(s, "\r")
 	s = strings.Replace(s, `%25`, `%`, -1)
