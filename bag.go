@@ -99,7 +99,7 @@ func (b *Bag) IsComplete() (bool, error) {
 	}
 
 	if len(missing) > 0 {
-		return false, errors.New(fmt.Sprintf("Missing file in manifest: %s", missing[0]))
+		return false, fmt.Errorf("Missing file in manifest: %s", missing[0])
 	}
 
 	return true, nil
@@ -112,6 +112,34 @@ func (b *Bag) IsValid() (bool, error) {
 	if err != nil {
 		return false, err
 	}
+
+	// queue up checksum jobs
+	jobInput := make(chan checksumJob)
+	jobOutput := checksumWorkers(2, jobInput)
+	go func() {
+		// checksums for all manifest entries
+		for _, m := range append(b.manifests, b.tagManifests...) {
+			for path, entry := range m.entries {
+				jobInput <- checksumJob{
+					path:        filepath.Join(b.path, decodePath(path)),
+					alg:         m.algorithm,
+					expectedSum: entry.sum,
+				}
+			}
+		}
+		close(jobInput)
+	}()
+
+	errs := []error{}
+	for job := range jobOutput {
+		if job.expectedSum != job.currentSum {
+			errs = append(errs, fmt.Errorf("Checksum failed for: %s", job.path))
+		}
+	}
+	if len(errs) > 0 {
+		return false, errs[0]
+	}
+
 	return true, nil
 }
 

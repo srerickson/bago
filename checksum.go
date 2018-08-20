@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 )
 
 // SHA512 = `sha512`
@@ -24,6 +25,14 @@ const (
 )
 
 var availableAlgs = [...]string{SHA512, SHA256, SHA224, SHA1, MD5}
+
+type checksumJob struct {
+	path        string
+	alg         string
+	expectedSum string
+	currentSum  string
+	err         error
+}
 
 func AlgIsAvailabe(alg string) bool {
 	for _, a := range availableAlgs {
@@ -81,4 +90,34 @@ func newHash(alg string) (hash.Hash, error) {
 		return nil, errors.New(msg)
 	}
 	return h, nil
+}
+
+func checksumWorkers(workers int, jobs chan checksumJob) chan checksumJob {
+	results := make(chan checksumJob)
+	var wg sync.WaitGroup
+
+	//checksum workers
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range jobs {
+				if job.err != nil {
+					results <- job
+					break
+				}
+				job.currentSum, job.err = Checksum(job.path, job.alg)
+				results <- job
+				if job.err != nil {
+					break
+				}
+			}
+		}()
+	}
+	// Channel Closers
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+	return results
 }
