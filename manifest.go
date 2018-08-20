@@ -14,9 +14,8 @@ import (
 )
 
 const (
-	tagManifest        = 1
-	payloadManifest    = 2
-	bagitPathSeparator = '/'
+	tagManifest     = 1
+	payloadManifest = 2
 )
 
 //Manifest represents a payload manifest file
