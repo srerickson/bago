@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 )
 
 const (
@@ -64,46 +65,40 @@ func LoadBag(path string) (*Bag, error) {
 // IsComplete returns whether bag satisfies bag completeness conditions.
 // See: https://tools.ietf.org/html/draft-kunze-bagit-16#section-3
 func (b *Bag) IsComplete() (bool, error) {
-	// check bagit.txt
 	err := b.bagitTxtErrors()
 	if err != nil {
 		return false, err
 	}
-
-	// build payload
-	if b.payload == nil {
-		b.payload = NewManifest(``)
+	err = b.statTags()
+	if err != nil {
+		return false, err
 	}
-	fileChan := fileWalker(filepath.Join(b.path, dataDir))
-	for f := range fileChan {
-		relPath, _ := filepath.Rel(b.path, f.path) // file path relative to bag
-		encPath := encodePath(relPath)             // encoded for manifests
-		// check if already exists?
-		entry := ManifestEntry{
-			rawPath: f.path,
-			size:    f.info.Size(),
-		}
-		// record which manifests this file was not found in
-		for _, m := range b.manifests {
-			if _, ok := m.entries[encPath]; !ok {
-				entry.notIn = append(entry.notIn, m)
-			}
-		}
-		b.payload.entries[encPath] = entry
+	err = b.initPayload()
+	if err != nil {
+		return false, err
 	}
-	missing := []string{}
+	missingFromManifest := []string{}
 	for p, e := range b.payload.entries {
 		if len(e.notIn) > 0 {
-			missing = append(missing, p)
+			// some versions of spec only require that files are listed in *one* manifest
+			missingFromManifest = append(missingFromManifest, p)
 		}
 	}
-
-	if len(missing) > 0 {
-		return false, fmt.Errorf("Missing file in manifest: %s", missing[0])
+	missingFromPayload := []string{}
+	for _, m := range b.manifests {
+		for p, _ := range m.entries {
+			if _, ok := b.payload.entries[p]; !ok {
+				missingFromPayload = append(missingFromPayload, p)
+			}
+		}
 	}
-
+	if len(missingFromManifest) > 0 {
+		return false, fmt.Errorf("Missing file in manifest: \n --%s", strings.Join(missingFromManifest, ", "))
+	}
+	if len(missingFromPayload) > 0 {
+		return false, fmt.Errorf("Missing file in payload: \n -- %s", strings.Join(missingFromPayload, ",\n -- "))
+	}
 	return true, nil
-
 }
 
 // IsValid returns whether the bag at path is valid
@@ -112,11 +107,11 @@ func (b *Bag) IsValid() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-
 	// queue up checksum jobs
 	jobInput := make(chan checksumJob)
 	jobOutput := checksumWorkers(2, jobInput)
 	go func() {
+		defer close(jobInput)
 		// checksums for all manifest entries
 		for _, m := range append(b.manifests, b.tagManifests...) {
 			for path, entry := range m.entries {
@@ -127,9 +122,7 @@ func (b *Bag) IsValid() (bool, error) {
 				}
 			}
 		}
-		close(jobInput)
 	}()
-
 	errs := []error{}
 	for job := range jobOutput {
 		if job.expectedSum != job.currentSum {
@@ -139,7 +132,6 @@ func (b *Bag) IsValid() (bool, error) {
 	if len(errs) > 0 {
 		return false, errs[0]
 	}
-
 	return true, nil
 }
 
@@ -175,6 +167,43 @@ func (b *Bag) bagitTxtErrors() error {
 		if !pattern.MatchString(bagit.tags[label]) {
 			msg := fmt.Sprintf(`Malformed value in %s for label %s: %s`, bagitTxt, label, bagit.tags[label])
 			return errors.New(msg)
+		}
+	}
+	return nil
+}
+
+func (b *Bag) initPayload() error {
+	if b.payload == nil {
+		b.payload = NewManifest(``)
+	}
+	fileChan := fileWalker(filepath.Join(b.path, dataDir))
+	for f := range fileChan {
+		relPath, _ := filepath.Rel(b.path, f.path) // file path relative to bag
+		encPath := encodePath(relPath)             // encoded for manifests
+		// check if already exists?
+		if _, exists := b.payload.entries[encPath]; exists {
+			return fmt.Errorf("File path encoding collision with: %s", encPath)
+		}
+		entry := ManifestEntry{rawPath: f.path, size: f.info.Size()}
+		// search manifests and record if missing
+		for _, m := range b.manifests {
+			if _, ok := m.entries[encPath]; !ok {
+				entry.notIn = append(entry.notIn, m)
+			}
+		}
+		b.payload.entries[encPath] = entry
+	}
+	return nil
+}
+
+// TODO return all failed
+func (b *Bag) statTags() error {
+	for _, m := range b.tagManifests {
+		for _, e := range m.entries {
+			_, err := os.Stat(filepath.Join(b.path, e.rawPath))
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil

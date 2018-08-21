@@ -16,6 +16,7 @@ type fileInfo struct {
 func fileWalker(path string) chan fileInfo {
 	files := make(chan fileInfo)
 	go func(path string) {
+		defer close(files)
 		// stream filenames by walking filepath
 		filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
 			if err == nil && info != nil && info.IsDir() {
@@ -24,7 +25,6 @@ func fileWalker(path string) chan fileInfo {
 			files <- fileInfo{path: p, info: info, err: err}
 			return err // should be nil. If not, filepath.Walk stops
 		})
-		close(files)
 	}(path)
 	return files
 }
