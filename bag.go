@@ -19,10 +19,12 @@ const (
 type Bag struct {
 	path         string
 	version      string
+	payload      *Payload
 	manifests    []*Manifest
 	tagManifests []*Manifest
 	tagFiles     map[string]*TagFile
-	payload      *Manifest
+	manInPay     map[*ManifestEntry]*Payload
+	payInMan     map[*PayloadEntry][]*Manifest
 }
 
 // LoadBag returs Bag object for bag at path
@@ -37,6 +39,11 @@ func LoadBag(path string) (*Bag, error) {
 	if !dataInfo.IsDir() {
 		return nil, errors.New(`no data directory`)
 	}
+	bag.payload, err = initPayload(bag.path)
+	if err != nil {
+		return nil, err
+	}
+
 	// read bagit.txt
 	bagitTags, err := ReadTagFile(filepath.Join(path, bagitTxt))
 	if err != nil {
@@ -73,13 +80,9 @@ func (b *Bag) IsComplete() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	err = b.initPayload()
-	if err != nil {
-		return false, err
-	}
 	missingFromManifest := []string{}
 	for p, e := range b.payload.entries {
-		if len(e.notIn) > 0 {
+		if len(e.in) == 0 {
 			// some versions of spec only require that files are listed in *one* manifest
 			missingFromManifest = append(missingFromManifest, p)
 		}
@@ -168,30 +171,6 @@ func (b *Bag) bagitTxtErrors() error {
 			msg := fmt.Sprintf(`Malformed value in %s for label %s: %s`, bagitTxt, label, bagit.tags[label])
 			return errors.New(msg)
 		}
-	}
-	return nil
-}
-
-func (b *Bag) initPayload() error {
-	if b.payload == nil {
-		b.payload = NewManifest(``)
-	}
-	fileChan := fileWalker(filepath.Join(b.path, dataDir))
-	for f := range fileChan {
-		relPath, _ := filepath.Rel(b.path, f.path) // file path relative to bag
-		encPath := encodePath(relPath)             // encoded for manifests
-		// check if already exists?
-		if _, exists := b.payload.entries[encPath]; exists {
-			return fmt.Errorf("File path encoding collision with: %s", encPath)
-		}
-		entry := ManifestEntry{rawPath: f.path, size: f.info.Size()}
-		// search manifests and record if missing
-		for _, m := range b.manifests {
-			if _, ok := m.entries[encPath]; !ok {
-				entry.notIn = append(entry.notIn, m)
-			}
-		}
-		b.payload.entries[encPath] = entry
 	}
 	return nil
 }

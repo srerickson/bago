@@ -27,9 +27,7 @@ type Manifest struct {
 
 type ManifestEntry struct {
 	rawPath string
-	size    int64       // filesize
-	sum     string      // checksum
-	notIn   []*Manifest // Manifests *missing* this entry
+	sum     string // checksum
 }
 
 var manifestLineRE = regexp.MustCompile(`^(\S+)\s+(\S.*)$`)
