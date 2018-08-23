@@ -22,11 +22,8 @@ func init() {
 }
 
 func handleErr(err error) {
-	if err != nil {
-		if !quiet {
-			fmt.Fprintln(os.Stderr, err)
-		}
-		os.Exit(1)
+	if !quiet {
+		fmt.Fprintln(os.Stderr, err)
 	}
 }
 
@@ -39,9 +36,14 @@ func main() {
 	}
 	if validate {
 		bag, err := bago.LoadBag(path)
-		handleErr(err)
-		_, err = bag.IsValid()
-		handleErr(err)
+		if err != nil {
+			handleErr(err)
+			os.Exit(1)
+		}
+		valid := bag.IsValid(handleErr)
+		if !valid {
+			os.Exit(1)
+		}
 		// bag.Print()
 	}
 

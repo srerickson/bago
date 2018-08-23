@@ -21,8 +21,8 @@ const (
 //Manifest represents a payload manifest file
 type Manifest struct {
 	algorithm string
-	entries   map[string]ManifestEntry // key is encoded file path
-	kind      int                      // tag or payload
+	entries   map[string]*ManifestEntry // key is encoded file path
+	kind      int                       // tag or payload
 }
 
 type ManifestEntry struct {
@@ -37,12 +37,12 @@ var manifestFilenameRE = regexp.MustCompile(`(tag)?manifest-(\w+).txt$`)
 // NewManifest returns an initialized manifest
 func NewManifest(alg string) *Manifest {
 	manifest := &Manifest{algorithm: alg}
-	manifest.entries = make(map[string]ManifestEntry)
+	manifest.entries = make(map[string]*ManifestEntry)
 	return manifest
 }
 
-func ParseManifestEntries(reader io.Reader) (map[string]ManifestEntry, error) {
-	entries := make(map[string]ManifestEntry)
+func ParseManifestEntries(reader io.Reader) (map[string]*ManifestEntry, error) {
+	entries := make(map[string]*ManifestEntry)
 	lineNum := 0
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
@@ -63,7 +63,7 @@ func ParseManifestEntries(reader io.Reader) (map[string]ManifestEntry, error) {
 			return nil, errors.New(msg)
 		}
 		sum := strings.Trim(match[1], ` `)
-		entries[encodePath(cleanPath)] = ManifestEntry{rawPath: cleanPath, sum: sum}
+		entries[encodePath(cleanPath)] = &ManifestEntry{rawPath: cleanPath, sum: sum}
 	}
 	return entries, nil
 }

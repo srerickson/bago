@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 )
 
 const (
@@ -19,31 +18,17 @@ const (
 type Bag struct {
 	path         string
 	version      string
+	encoding     string
 	payload      *Payload
+	tagFiles     map[string]*TagFile
 	manifests    []*Manifest
 	tagManifests []*Manifest
-	tagFiles     map[string]*TagFile
-	manInPay     map[*ManifestEntry]*Payload
-	payInMan     map[*PayloadEntry][]*Manifest
 }
 
 // LoadBag returs Bag object for bag at path
 func LoadBag(path string) (*Bag, error) {
 	bag := &Bag{}
 	bag.path = path
-	// data payload present?
-	dataInfo, err := os.Stat(filepath.Join(path, dataDir))
-	if err != nil {
-		return nil, err
-	}
-	if !dataInfo.IsDir() {
-		return nil, errors.New(`no data directory`)
-	}
-	bag.payload, err = initPayload(bag.path)
-	if err != nil {
-		return nil, err
-	}
-
 	// read bagit.txt
 	bagitTags, err := ReadTagFile(filepath.Join(path, bagitTxt))
 	if err != nil {
@@ -51,6 +36,11 @@ func LoadBag(path string) (*Bag, error) {
 	}
 	bag.tagFiles = make(map[string]*TagFile)
 	bag.tagFiles[bagitTxt] = bagitTags
+	// load payload
+	bag.payload, err = loadPayload(bag.path)
+	if err != nil {
+		return nil, err
+	}
 	// read manifests for both payload and tag files
 	mans, err := ReadAllManifests(path)
 	if err != nil {
@@ -71,44 +61,50 @@ func LoadBag(path string) (*Bag, error) {
 
 // IsComplete returns whether bag satisfies bag completeness conditions.
 // See: https://tools.ietf.org/html/draft-kunze-bagit-16#section-3
-func (b *Bag) IsComplete() (bool, error) {
+func (b *Bag) IsComplete(errCb func(error)) bool {
 	err := b.bagitTxtErrors()
+	complete := true
 	if err != nil {
-		return false, err
-	}
-	err = b.statTags()
-	if err != nil {
-		return false, err
-	}
-	missingFromManifest := []string{}
-	for p, e := range b.payload.entries {
-		if len(e.in) == 0 {
-			// some versions of spec only require that files are listed in *one* manifest
-			missingFromManifest = append(missingFromManifest, p)
+		complete = false
+		if errCb != nil {
+			errCb(err)
 		}
 	}
-	missingFromPayload := []string{}
-	for _, m := range b.manifests {
-		for p, _ := range m.entries {
-			if _, ok := b.payload.entries[p]; !ok {
-				missingFromPayload = append(missingFromPayload, p)
+	missingFromPayload := b.missingFromPayload()
+	if len(missingFromPayload) > 0 {
+		complete = false
+		if errCb != nil {
+			for _, m := range missingFromPayload {
+				errCb(fmt.Errorf("Missing from payload: %s", m))
 			}
 		}
 	}
-	if len(missingFromManifest) > 0 {
-		return false, fmt.Errorf("Missing file in manifest: \n --%s", strings.Join(missingFromManifest, ", "))
+	missingFromManifests := b.missingFromManifests(0)
+	if len(missingFromManifests) > 0 {
+		complete = false
+		if errCb != nil {
+			for _, m := range missingFromManifests {
+				errCb(fmt.Errorf("Missing from manifests: %s", m))
+			}
+		}
 	}
-	if len(missingFromPayload) > 0 {
-		return false, fmt.Errorf("Missing file in payload: \n -- %s", strings.Join(missingFromPayload, ",\n -- "))
+	missingTags := b.missingTagFiles()
+	if len(missingTags) > 0 {
+		complete = false
+		if errCb != nil {
+			for _, m := range missingTags {
+				errCb(fmt.Errorf("Missing tag file: %s", m))
+			}
+		}
 	}
-	return true, nil
+	return complete
 }
 
 // IsValid returns whether the bag at path is valid
-func (b *Bag) IsValid() (bool, error) {
-	_, err := b.IsComplete()
-	if err != nil {
-		return false, err
+func (b *Bag) IsValid(errCb func(error)) bool {
+	valid := b.IsComplete(errCb)
+	if !valid {
+		return false
 	}
 	// queue up checksum jobs
 	jobInput := make(chan checksumJob)
@@ -126,16 +122,15 @@ func (b *Bag) IsValid() (bool, error) {
 			}
 		}
 	}()
-	errs := []error{}
 	for job := range jobOutput {
 		if job.expectedSum != job.currentSum {
-			errs = append(errs, fmt.Errorf("Checksum failed for: %s", job.path))
+			valid = false
+			if errCb != nil {
+				errCb(fmt.Errorf("Checksum failed for: %s", job.path))
+			}
 		}
 	}
-	if len(errs) > 0 {
-		return false, errs[0]
-	}
-	return true, nil
+	return valid
 }
 
 // Print Bag Contents
@@ -176,14 +171,43 @@ func (b *Bag) bagitTxtErrors() error {
 }
 
 // TODO return all failed
-func (b *Bag) statTags() error {
+func (b *Bag) missingTagFiles() []string {
+	missing := []string{}
 	for _, m := range b.tagManifests {
-		for _, e := range m.entries {
-			_, err := os.Stat(filepath.Join(b.path, e.rawPath))
+		for tPath, tEntry := range m.entries {
+			_, err := os.Stat(filepath.Join(b.path, tEntry.rawPath))
 			if err != nil {
-				return err
+				missing = append(missing, tPath)
 			}
 		}
 	}
-	return nil
+	return missing
+}
+
+func (b *Bag) missingFromPayload() []string {
+	missing := []string{}
+	for _, m := range b.manifests {
+		for mPath := range m.entries {
+			if _, ok := b.payload.entries[mPath]; !ok {
+				missing = append(missing, mPath)
+			}
+		}
+	}
+	return missing
+}
+
+// thesh is the min number of manifests that a file can be missing from
+func (b *Bag) missingFromManifests(thresh int) []string {
+	counts := make(map[string]int)
+	missing := []string{}
+	for pPath := range b.payload.entries {
+		for _, man := range b.manifests {
+			if _, ok := man.entries[pPath]; !ok {
+				if counts[pPath]++; counts[pPath] > thresh {
+					missing = append(missing, pPath)
+				}
+			}
+		}
+	}
+	return missing
 }
