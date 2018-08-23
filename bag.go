@@ -32,19 +32,19 @@ func LoadBag(path string) (*Bag, error) {
 	// read bagit.txt
 	bagitTags, err := ReadTagFile(filepath.Join(path, bagitTxt))
 	if err != nil {
-		return nil, err
+		return bag, err
 	}
 	bag.tagFiles = make(map[string]*TagFile)
 	bag.tagFiles[bagitTxt] = bagitTags
 	// load payload
 	bag.payload, err = loadPayload(bag.path)
 	if err != nil {
-		return nil, err
+		return bag, err
 	}
 	// read manifests for both payload and tag files
 	mans, err := ReadAllManifests(path)
 	if err != nil {
-		return nil, err
+		return bag, err
 	}
 	for i := range mans {
 		if mans[i].kind == payloadManifest {
@@ -54,7 +54,7 @@ func LoadBag(path string) (*Bag, error) {
 		}
 	}
 	if len(bag.manifests) == 0 {
-		return nil, errors.New(`no manifests found`)
+		return bag, errors.New(`no manifests found`)
 	}
 	return bag, nil
 }
@@ -62,8 +62,23 @@ func LoadBag(path string) (*Bag, error) {
 // IsComplete returns whether bag satisfies bag completeness conditions.
 // See: https://tools.ietf.org/html/draft-kunze-bagit-16#section-3
 func (b *Bag) IsComplete(errCb func(error)) bool {
-	err := b.bagitTxtErrors()
 	complete := true
+
+	if b.payload == nil {
+		if errCb != nil {
+			errCb(fmt.Errorf("bag has no payload"))
+		}
+		return false
+	}
+
+	if len(b.manifests) == 0 {
+		if errCb != nil {
+			errCb(fmt.Errorf("bag has no manifest"))
+		}
+		return false
+	}
+
+	err := b.bagitTxtErrors()
 	if err != nil {
 		complete = false
 		if errCb != nil {
@@ -145,14 +160,17 @@ func (b *Bag) Print() {
 }
 
 func (b *Bag) bagitTxtErrors() error {
+	if b == nil {
+		return errors.New(`Bag not loaded`)
+	}
 	required := map[string]*regexp.Regexp{
 		`BagIt-Version`:               regexp.MustCompile(`(\d+)\.(\d+)`),
 		`Tag-File-Character-Encoding`: regexp.MustCompile(`(.*)`),
 	}
-	bagit := b.tagFiles[bagitTxt]
-	if bagit == nil {
+	if b.tagFiles == nil || b.tagFiles[bagitTxt] == nil {
 		return errors.New(`Missing bagit.txt`)
 	}
+	bagit := b.tagFiles[bagitTxt]
 	if bagit.hasBOM {
 		msg := fmt.Sprintf(`%s has BOM`, bagitTxt)
 		return errors.New(msg)

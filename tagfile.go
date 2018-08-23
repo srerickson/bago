@@ -90,9 +90,3 @@ func ReadTagFile(path string) (*TagFile, error) {
 	}
 	return tags, err
 }
-
-func (tf *TagFile) Print() {
-	for _, l := range tf.labels {
-		fmt.Printf("%s: %s\n", l, tf.tags[l])
-	}
-}
