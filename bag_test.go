@@ -60,13 +60,17 @@ func TestLoadBag(t *testing.T) {
 func TestIsValid(t *testing.T) {
 	for version, group := range testBags() {
 		for name, path := range group.valid {
-			bag, err := LoadBag(path)
-			if err != nil {
-				t.Error("Expected no error for valid test bag", version, name)
-			}
+			bag, _ := LoadBag(path)
 			isValid := bag.IsValid(nil)
 			if !isValid {
 				t.Error("Valid test bag should be valid:", version, name)
+			}
+		}
+		for name, path := range group.invalid {
+			bag, _ := LoadBag(path)
+			isValid := bag.IsValid(nil)
+			if isValid {
+				t.Error("Invalid test bag should be invalid:", version, name)
 			}
 		}
 	}
