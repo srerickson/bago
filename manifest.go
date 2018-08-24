@@ -69,17 +69,22 @@ func ParseManifestEntries(reader io.Reader) (map[string]*ManifestEntry, error) {
 }
 
 // ReadManifest reads and parses a manifest file
-func ReadManifest(p string) (*Manifest, error) {
+func ReadManifest(p string, enc string) (*Manifest, error) {
 	file, err := os.Open(p)
 	defer file.Close()
 	if err != nil {
 		return nil, err
 	}
+
 	manifest, err := NewManifestFromFilename(filepath.Base(p))
 	if err != nil {
 		return nil, err
 	}
-	manifest.entries, err = ParseManifestEntries(file)
+	decodeReader, err := newReader(file, enc)
+	if err != nil {
+		return nil, err
+	}
+	manifest.entries, err = ParseManifestEntries(decodeReader)
 	return manifest, err
 }
 
@@ -108,7 +113,7 @@ func NewManifestFromFilename(filename string) (*Manifest, error) {
 	return manifest, nil
 }
 
-func ReadAllManifests(dir string) ([]*Manifest, error) {
+func ReadAllManifests(dir string, enc string) ([]*Manifest, error) {
 	//parse manifest files
 	mans := []*Manifest{}
 	manFiles, err := filepath.Glob(filepath.Join(dir, "*manifest-*.txt"))
@@ -120,7 +125,7 @@ func ReadAllManifests(dir string) ([]*Manifest, error) {
 	}
 	for _, f := range manFiles {
 		var m *Manifest
-		m, err = ReadManifest(f)
+		m, err = ReadManifest(f, enc)
 		if err != nil {
 			return mans, err
 		}

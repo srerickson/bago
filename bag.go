@@ -30,7 +30,7 @@ func LoadBag(path string) (*Bag, error) {
 	bag := &Bag{}
 	bag.path = path
 	// read bagit.txt
-	bagitTags, err := ReadTagFile(filepath.Join(path, bagitTxt))
+	bagitTags, err := ReadTagFile(filepath.Join(path, bagitTxt), `UTF-8`)
 	if err != nil {
 		return bag, err
 	}
@@ -42,7 +42,7 @@ func LoadBag(path string) (*Bag, error) {
 		return bag, err
 	}
 	// read manifests for both payload and tag files
-	mans, err := ReadAllManifests(path)
+	mans, err := ReadAllManifests(path, bag.tagFiles[`bagit.txt`].tags[`Tag-File-Character-Encoding`])
 	if err != nil {
 		return bag, err
 	}
@@ -229,3 +229,11 @@ func (b *Bag) missingFromManifests(thresh int) []string {
 	}
 	return missing
 }
+
+//
+// func (b *Bag) Encoding() (string, error) {
+// 	if b.encoding != `` {
+// 		return b.encoding, nil
+// 	}
+// 	return ``, fmt.Errorf("Encoding not defined")
+// }

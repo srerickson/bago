@@ -33,7 +33,6 @@ func ParseTags(reader io.Reader) (*TagFile, error) {
 	for scanner.Scan() {
 		lineNum++
 		line := scanner.Text()
-
 		// check for BOM
 		if lineNum == 1 {
 			line = strings.Map(func(r rune) rune {
@@ -43,16 +42,12 @@ func ParseTags(reader io.Reader) (*TagFile, error) {
 				}
 				return r
 			}, line)
-
 		}
-
 		errMsg := fmt.Sprintf("Syntax error at line: %d", lineNum)
-
 		// ignore empty lines
 		if emptyLineRE.MatchString(line) {
 			continue
 		}
-
 		// continuation of previous label
 		if contLineRE.MatchString(line) {
 			l := len(tf.labels)
@@ -63,7 +58,6 @@ func ParseTags(reader io.Reader) (*TagFile, error) {
 			}
 			return nil, errors.New(errMsg)
 		}
-
 		// start of a new label/value pair
 		match := labelLineRe.FindStringSubmatch(line)
 		if len(match) < 3 {
@@ -77,13 +71,17 @@ func ParseTags(reader io.Reader) (*TagFile, error) {
 	return tf, nil
 }
 
-func ReadTagFile(path string) (*TagFile, error) {
+func ReadTagFile(path string, enc string) (*TagFile, error) {
 	file, err := os.Open(path)
 	defer file.Close()
 	if err != nil {
 		return nil, err
 	}
-	tags, err := ParseTags(io.Reader(file))
+	decodeReader, err := newReader(file, enc)
+	if err != nil {
+		return nil, err
+	}
+	tags, err := ParseTags(decodeReader)
 	if err != nil {
 		msg := fmt.Sprintf("While reading %s: %s", path, err.Error())
 		return nil, errors.New(msg)
