@@ -100,7 +100,7 @@ func ReadTagFile(path string, enc string) (*TagFile, error) {
 	return tags, err
 }
 
-func getBagitTxtValues(tf *TagFile) (version string, encoding string, err error) {
+func getBagitTxtValues(tf *TagFile) (vers string, enc string, err error) {
 	labels := []string{`BagIt-Version`, `Tag-File-Character-Encoding`}
 	patterns := []*regexp.Regexp{
 		regexp.MustCompile(`(\d+)\.(\d+)`),
@@ -122,7 +122,7 @@ func getBagitTxtValues(tf *TagFile) (version string, encoding string, err error)
 			return ``, ``, err
 		}
 		if !patterns[i].MatchString(vals[0]) {
-			err = fmt.Errorf(`Malformed value of %s in %s: %s`, label, bagitTxt, vals[0])
+			err = fmt.Errorf(`Bad value for %s in %s: %s`, label, bagitTxt, vals[0])
 			return ``, ``, err
 		}
 		returnVals[i] = vals[0]

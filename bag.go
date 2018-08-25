@@ -11,6 +11,7 @@ const (
 	defaultVersion = "1.0" // BagIt version for new bags
 	bagitTxt       = `bagit.txt`
 	bagInfo        = `bag-info.txt`
+	fetchTxt       = `fetch.txt`
 	dataDir        = `data`
 )
 
@@ -23,6 +24,7 @@ type Bag struct {
 	bagInfo      *TagFile
 	manifests    []*Manifest
 	tagManifests []*Manifest
+	fetch        FetchFile
 }
 
 // LoadBag returs Bag object for bag at path
@@ -39,6 +41,11 @@ func LoadBag(path string) (*Bag, error) {
 	}
 	// try to load bag-info.txt
 	bag.bagInfo, _ = ReadTagFile(filepath.Join(path, bagInfo), bag.encoding)
+	// try to load bag-info.txt
+	bag.fetch, err = ReadFetchFile(filepath.Join(path, fetchTxt), bag.encoding)
+	if err != nil {
+		return bag, err
+	}
 	// load payload
 	bag.payload, err = loadPayload(bag.path)
 	if err != nil {
@@ -187,11 +194,3 @@ func (b *Bag) missingFromManifests(thresh int) []string {
 	}
 	return missing
 }
-
-//
-// func (b *Bag) Encoding() (string, error) {
-// 	if b.encoding != `` {
-// 		return b.encoding, nil
-// 	}
-// 	return ``, fmt.Errorf("Encoding not defined")
-// }
