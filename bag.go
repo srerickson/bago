@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 )
 
 const (
 	defaultVersion = "1.0" // BagIt version for new bags
 	bagitTxt       = `bagit.txt`
+	bagInfo        = `bag-info.txt`
 	dataDir        = `data`
 )
 
@@ -20,29 +20,32 @@ type Bag struct {
 	version      string
 	encoding     string
 	payload      *Payload
-	tagFiles     map[string]*TagFile
+	bagInfo      *TagFile
 	manifests    []*Manifest
 	tagManifests []*Manifest
 }
 
 // LoadBag returs Bag object for bag at path
 func LoadBag(path string) (*Bag, error) {
-	bag := &Bag{}
-	bag.path = path
+	bag := &Bag{path: path}
 	// read bagit.txt
 	bagitTags, err := ReadTagFile(filepath.Join(path, bagitTxt), `UTF-8`)
 	if err != nil {
 		return bag, err
 	}
-	bag.tagFiles = make(map[string]*TagFile)
-	bag.tagFiles[bagitTxt] = bagitTags
+	bag.version, bag.encoding, err = getBagitTxtValues(bagitTags)
+	if err != nil {
+		return bag, err
+	}
+	// try to load bag-info.txt
+	bag.bagInfo, _ = ReadTagFile(filepath.Join(path, bagInfo), bag.encoding)
 	// load payload
 	bag.payload, err = loadPayload(bag.path)
 	if err != nil {
 		return bag, err
 	}
 	// read manifests for both payload and tag files
-	mans, err := ReadAllManifests(path, bag.tagFiles[`bagit.txt`].tags[`Tag-File-Character-Encoding`])
+	mans, err := ReadAllManifests(path, bag.encoding)
 	if err != nil {
 		return bag, err
 	}
@@ -63,27 +66,23 @@ func LoadBag(path string) (*Bag, error) {
 // See: https://tools.ietf.org/html/draft-kunze-bagit-16#section-3
 func (b *Bag) IsComplete(errCb func(error)) bool {
 	complete := true
-
+	if b.version == `` && b.encoding == `` {
+		complete = false
+		if errCb != nil {
+			errCb(fmt.Errorf("Missing required fields in %s", bagitTxt))
+		}
+	}
 	if b.payload == nil {
 		if errCb != nil {
 			errCb(fmt.Errorf("bag has no payload"))
 		}
 		return false
 	}
-
 	if len(b.manifests) == 0 {
 		if errCb != nil {
 			errCb(fmt.Errorf("bag has no manifest"))
 		}
 		return false
-	}
-
-	err := b.bagitTxtErrors()
-	if err != nil {
-		complete = false
-		if errCb != nil {
-			errCb(err)
-		}
 	}
 	missingFromPayload := b.missingFromPayload()
 	if len(missingFromPayload) > 0 {
@@ -148,47 +147,6 @@ func (b *Bag) IsValid(errCb func(error)) bool {
 	return valid
 }
 
-// Print Bag Contents
-func (b *Bag) Print() {
-	fmt.Println(b.path)
-	for i := range b.manifests {
-		fmt.Println(b.manifests[i].algorithm)
-		for path, e := range b.manifests[i].entries {
-			fmt.Printf("-- %s: %s\n", path, e.sum)
-		}
-	}
-}
-
-func (b *Bag) bagitTxtErrors() error {
-	if b == nil {
-		return errors.New(`Bag not loaded`)
-	}
-	required := map[string]*regexp.Regexp{
-		`BagIt-Version`:               regexp.MustCompile(`(\d+)\.(\d+)`),
-		`Tag-File-Character-Encoding`: regexp.MustCompile(`(.*)`),
-	}
-	if b.tagFiles == nil || b.tagFiles[bagitTxt] == nil {
-		return errors.New(`Missing bagit.txt`)
-	}
-	bagit := b.tagFiles[bagitTxt]
-	if bagit.hasBOM {
-		msg := fmt.Sprintf(`%s has BOM`, bagitTxt)
-		return errors.New(msg)
-	}
-	for label, pattern := range required {
-		if bagit.tags[label] == `` {
-			msg := fmt.Sprintf(`Required field missing in %s: %s`, bagitTxt, label)
-			return errors.New(msg)
-		}
-		if !pattern.MatchString(bagit.tags[label]) {
-			msg := fmt.Sprintf(`Malformed value in %s for label %s: %s`, bagitTxt, label, bagit.tags[label])
-			return errors.New(msg)
-		}
-	}
-	return nil
-}
-
-// TODO return all failed
 func (b *Bag) missingTagFiles() []string {
 	missing := []string{}
 	for _, m := range b.tagManifests {
