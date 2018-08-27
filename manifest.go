@@ -32,40 +32,36 @@ type ManifestEntry struct {
 
 var manifestLineRE = regexp.MustCompile(`^(\S+)\s+(\S.*)$`)
 
-var manifestFilenameRE = regexp.MustCompile(`(tag)?manifest-(\w+).txt$`)
-
 // NewManifest returns an initialized manifest
 func NewManifest(alg string) *Manifest {
 	manifest := &Manifest{algorithm: alg}
-	manifest.entries = make(map[string]*ManifestEntry)
 	return manifest
 }
 
-func ParseManifestEntries(reader io.Reader) (map[string]*ManifestEntry, error) {
-	entries := make(map[string]*ManifestEntry)
+func (man *Manifest) parseEntries(reader io.Reader) error {
+	man.entries = make(map[string]*ManifestEntry)
 	lineNum := 0
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
 		lineNum++
 		match := manifestLineRE.FindStringSubmatch(scanner.Text())
 		if len(match) < 3 {
-			msg := fmt.Sprintf("Syntax error at line: %d", lineNum)
-			return nil, errors.New(msg)
+			return fmt.Errorf("Syntax error at line: %d", lineNum)
 		}
-		_, exists := entries[match[2]]
+		_, exists := man.entries[match[2]]
 		if exists {
-			msg := fmt.Sprintf("Duplicate manifest entry at line: %d", lineNum)
-			return nil, errors.New(msg)
+			return fmt.Errorf("Duplicate manifest entry at line: %d", lineNum)
 		}
 		cleanPath := filepath.Clean(decodePath(match[2]))
 		if strings.HasPrefix(cleanPath, `..`) {
-			msg := fmt.Sprintf("Out of scope path at line: %d", lineNum)
-			return nil, errors.New(msg)
+			return fmt.Errorf("Out of scope path at line: %d", lineNum)
 		}
 		sum := strings.Trim(match[1], ` `)
-		entries[encodePath(cleanPath)] = &ManifestEntry{rawPath: cleanPath, sum: sum}
+
+		man.entries[encodePath(cleanPath)] = &ManifestEntry{
+			rawPath: cleanPath, sum: sum}
 	}
-	return entries, nil
+	return nil
 }
 
 // ReadManifest reads and parses a manifest file
@@ -75,7 +71,6 @@ func ReadManifest(p string, enc string) (*Manifest, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	manifest, err := NewManifestFromFilename(filepath.Base(p))
 	if err != nil {
 		return nil, err
@@ -84,31 +79,29 @@ func ReadManifest(p string, enc string) (*Manifest, error) {
 	if err != nil {
 		return nil, err
 	}
-	manifest.entries, err = ParseManifestEntries(decodeReader)
-	return manifest, err
+	return manifest, manifest.parseEntries(decodeReader)
 }
 
 // NewManifestFromFilename returns checksum algorithm from manifest's filename
 func NewManifestFromFilename(filename string) (*Manifest, error) {
-	manifest := &Manifest{}
-	msg := fmt.Sprintf("Manifest filename not correctly formed: %s", filename)
+	manifestFilenameRE := regexp.MustCompile(`(tag)?manifest-(\w+).txt$`)
 	match := manifestFilenameRE.FindStringSubmatch(filename)
 	if len(match) < 3 {
-		return nil, errors.New(msg)
+		return nil, fmt.Errorf("Badly formed manifest filename: %s", filename)
 	}
 	// Checksum algorithm
 	alg, err := NormalizeAlgName(match[2])
 	if err != nil {
 		return nil, err
 	}
-	manifest.algorithm = alg
+	manifest := &Manifest{algorithm: alg}
 	// Manifest type
 	if match[1] == `tag` {
 		manifest.kind = tagManifest
 	} else if match[1] == `` {
 		manifest.kind = payloadManifest
 	} else {
-		return nil, errors.New(msg)
+		return nil, fmt.Errorf("Badly formed manifest filename: %s", filename)
 	}
 	return manifest, nil
 }
