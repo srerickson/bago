@@ -2,10 +2,8 @@ package bago
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -18,7 +16,7 @@ type Fetch struct {
 	path string
 }
 
-func ParseFetch(reader io.Reader) (FetchFile, error) {
+func parseFetch(reader io.Reader) (FetchFile, error) {
 	fFile := FetchFile{}
 	lineNum := 0
 	emptyLineRE := regexp.MustCompile(`^\s*$`)
@@ -46,27 +44,4 @@ func ParseFetch(reader io.Reader) (FetchFile, error) {
 
 	}
 	return fFile, nil
-}
-
-func ReadFetchFile(path string, enc string) (FetchFile, error) {
-	_, err := os.Stat(path)
-	if err != nil {
-		// not an error if fetch doesn't exist
-		return FetchFile{}, nil
-	}
-	file, err := os.Open(path)
-	defer file.Close()
-	if err != nil {
-		return nil, err
-	}
-	decodeReader, err := newReader(file, enc)
-	if err != nil {
-		return nil, err
-	}
-	fetch, err := ParseFetch(decodeReader)
-	if err != nil {
-		msg := fmt.Sprintf("While reading %s: %s", path, err.Error())
-		return nil, errors.New(msg)
-	}
-	return fetch, err
 }

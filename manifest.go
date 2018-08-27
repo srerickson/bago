@@ -2,10 +2,8 @@ package bago
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -65,25 +63,9 @@ func (man *Manifest) parseEntries(reader io.Reader) error {
 }
 
 // ReadManifest reads and parses a manifest file
-func ReadManifest(p string, enc string) (*Manifest, error) {
-	file, err := os.Open(p)
-	defer file.Close()
-	if err != nil {
-		return nil, err
-	}
-	manifest, err := NewManifestFromFilename(filepath.Base(p))
-	if err != nil {
-		return nil, err
-	}
-	decodeReader, err := newReader(file, enc)
-	if err != nil {
-		return nil, err
-	}
-	return manifest, manifest.parseEntries(decodeReader)
-}
 
 // NewManifestFromFilename returns checksum algorithm from manifest's filename
-func NewManifestFromFilename(filename string) (*Manifest, error) {
+func newManifestFromFilename(filename string) (*Manifest, error) {
 	manifestFilenameRE := regexp.MustCompile(`(tag)?manifest-(\w+).txt$`)
 	match := manifestFilenameRE.FindStringSubmatch(filename)
 	if len(match) < 3 {
@@ -104,27 +86,6 @@ func NewManifestFromFilename(filename string) (*Manifest, error) {
 		return nil, fmt.Errorf("Badly formed manifest filename: %s", filename)
 	}
 	return manifest, nil
-}
-
-func ReadAllManifests(dir string, enc string) ([]*Manifest, error) {
-	//parse manifest files
-	mans := []*Manifest{}
-	manFiles, err := filepath.Glob(filepath.Join(dir, "*manifest-*.txt"))
-	if err != nil {
-		return mans, err
-	}
-	if len(manFiles) == 0 {
-		return mans, errors.New(`No manifest files found`)
-	}
-	for _, f := range manFiles {
-		var m *Manifest
-		m, err = ReadManifest(f, enc)
-		if err != nil {
-			return mans, err
-		}
-		mans = append(mans, m)
-	}
-	return mans, nil
 }
 
 func encodePath(s string) string {

@@ -1,4 +1,4 @@
-package bago
+package fs
 
 import (
 	"os"
@@ -17,7 +17,7 @@ type TestVersionGroup struct {
 
 func testDataPath() string {
 	_, fPath, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(fPath), `test-data`)
+	return filepath.Join(filepath.Dir(fPath), `../test-data`)
 }
 
 func testBags() TestBagGroup {
@@ -50,8 +50,9 @@ func testBags() TestBagGroup {
 	return bags
 }
 
-func TestLoadBag(t *testing.T) {
-	_, err := LoadBag(filepath.Join(testDataPath(), `nobaghere`))
+func TestOpenBag(t *testing.T) {
+
+	_, err := OpenBag(filepath.Join(testDataPath(), `nobaghere`))
 	if err == nil {
 		t.Error("Expected an error got", err)
 	}
@@ -64,7 +65,7 @@ func TestIsValid(t *testing.T) {
 	}
 	for version, group := range testBags() {
 		for name, path := range group.valid {
-			bag, _ := LoadBag(path)
+			bag, _ := OpenBag(path)
 			wasCalled = false
 			isValid := bag.IsValid(callBack)
 			if !isValid {
@@ -74,7 +75,7 @@ func TestIsValid(t *testing.T) {
 			}
 		}
 		for name, path := range group.invalid {
-			bag, _ := LoadBag(path)
+			bag, _ := OpenBag(path)
 			wasCalled = false
 			isValid := bag.IsValid(callBack)
 			if isValid {

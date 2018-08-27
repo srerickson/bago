@@ -7,16 +7,13 @@ type FileInfo struct {
 	Size int64
 }
 
-type Closable interface {
-	Close() error
-}
-
 type Backend interface {
 	Stat(string) (FileInfo, error)
-	Open(string) (io.Reader, error)
-	Close(*Closable) error
-	Walk(string, func(string, FileInfo, error) error) error
-	OpenBag(string) (*Bag, error)
-	WriteBag(*Bag) (string, error)
+	Open(string) (io.ReadCloser, error)
+	AllManifests() []string
+	Close(io.Closer) error
+	Walk(string, func(string, int64, error) error) error
+	// OpenBag(string) (*Bag, error)
+	// WriteBag(*Bag) (string, error)
 	Checksum(string) (string, error)
 }

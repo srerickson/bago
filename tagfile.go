@@ -2,10 +2,8 @@ package bago
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
-	"os"
 	"regexp"
 	"strings"
 )
@@ -80,24 +78,6 @@ func ParseTags(reader io.Reader) (*TagFile, error) {
 		tf.Append(label, value)
 	}
 	return tf, nil
-}
-
-func ReadTagFile(path string, enc string) (*TagFile, error) {
-	file, err := os.Open(path)
-	defer file.Close()
-	if err != nil {
-		return nil, err
-	}
-	decodeReader, err := newReader(file, enc)
-	if err != nil {
-		return nil, err
-	}
-	tags, err := ParseTags(decodeReader)
-	if err != nil {
-		msg := fmt.Sprintf("While reading %s: %s", path, err.Error())
-		return nil, errors.New(msg)
-	}
-	return tags, err
 }
 
 func getBagitTxtValues(tf *TagFile) (vers string, enc string, err error) {

@@ -3,8 +3,6 @@ package bago
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 )
 
 const (
@@ -17,57 +15,52 @@ const (
 
 // Bag is a bagit repository
 type Bag struct {
-	backend      *Backend
-	path         string
-	version      string
-	encoding     string
-	payload      *Payload
-	bagInfo      *TagFile
-	manifests    []*Manifest
-	tagManifests []*Manifest
-	fetch        FetchFile
+	Backend      Backend     // backend interface
+	version      string      // from bagit.txt
+	encoding     string      // from bagit.txt
+	payload      Payload     // contents of the data directory
+	bagInfo      *TagFile    // contents of bag-info.txt
+	manifests    []*Manifest // list of payload manifests
+	tagManifests []*Manifest // list of tag file manifests
+	fetch        FetchFile   // contents of fetch.txt
 }
 
-// LoadBag returs Bag object for bag at path
-func LoadBag(path string) (*Bag, error) {
-	bag := &Bag{path: path}
-	// read bagit.txt
-	bagitTags, err := ReadTagFile(filepath.Join(path, bagitTxt), `UTF-8`)
+type Payload map[string]PayloadEntry
+
+type PayloadEntry struct {
+	rawPath string
+	size    int64
+}
+
+func (bag *Bag) Hydrate() error {
+	if bag.Backend == nil {
+		return errors.New("Cannot hydrate a bag with no Backend\n")
+	}
+	bagitTags, err := bag.readTagFile(bagitTxt, `UTF-8`)
 	if err != nil {
-		return bag, err
+		return err
 	}
 	bag.version, bag.encoding, err = getBagitTxtValues(bagitTags)
 	if err != nil {
-		return bag, err
+		return err
 	}
-	// try to load bag-info.txt
-	bag.bagInfo, _ = ReadTagFile(filepath.Join(path, bagInfo), bag.encoding)
-	// try to load bag-info.txt
-	bag.fetch, err = ReadFetchFile(filepath.Join(path, fetchTxt), bag.encoding)
+	bag.bagInfo, _ = bag.readTagFile(bagInfo, bag.encoding)
+	err = bag.readFetchFile()
 	if err != nil {
-		return bag, err
+		return err
 	}
-	// load payload
-	bag.payload, err = loadPayload(bag.path)
+	err = bag.initPayload()
 	if err != nil {
-		return bag, err
+		return err
 	}
-	// read manifests for both payload and tag files
-	mans, err := ReadAllManifests(path, bag.encoding)
+	err = bag.readAllManifests()
 	if err != nil {
-		return bag, err
-	}
-	for i := range mans {
-		if mans[i].kind == payloadManifest {
-			bag.manifests = append(bag.manifests, mans[i])
-		} else if mans[i].kind == tagManifest {
-			bag.tagManifests = append(bag.tagManifests, mans[i])
-		}
+		return err
 	}
 	if len(bag.manifests) == 0 {
-		return bag, errors.New(`no manifests found`)
+		return errors.New(`no manifests found`)
 	}
-	return bag, nil
+	return nil
 }
 
 // IsComplete returns whether bag satisfies bag completeness conditions.
@@ -137,7 +130,7 @@ func (b *Bag) IsValid(errCb func(error)) bool {
 		for _, m := range append(b.manifests, b.tagManifests...) {
 			for path, entry := range m.entries {
 				jobInput <- checksumJob{
-					path:        filepath.Join(b.path, decodePath(path)),
+					path:        decodePath(path),
 					alg:         m.algorithm,
 					expectedSum: entry.sum,
 				}
@@ -155,13 +148,13 @@ func (b *Bag) IsValid(errCb func(error)) bool {
 	return valid
 }
 
-func (b *Bag) missingTagFiles() []string {
+func (bag *Bag) missingTagFiles() []string {
 	missing := []string{}
-	for _, m := range b.tagManifests {
-		for tPath, tEntry := range m.entries {
-			_, err := os.Stat(filepath.Join(b.path, tEntry.rawPath))
+	for _, m := range bag.tagManifests {
+		for _, tEntry := range m.entries {
+			_, err := bag.Backend.Stat(tEntry.rawPath)
 			if err != nil {
-				missing = append(missing, tPath)
+				missing = append(missing, err.Error())
 			}
 		}
 	}
@@ -172,7 +165,7 @@ func (b *Bag) missingFromPayload() []string {
 	missing := []string{}
 	for _, m := range b.manifests {
 		for mPath := range m.entries {
-			if _, ok := b.payload.entries[mPath]; !ok {
+			if _, ok := b.payload[mPath]; !ok {
 				missing = append(missing, mPath)
 			}
 		}
@@ -184,7 +177,7 @@ func (b *Bag) missingFromPayload() []string {
 func (b *Bag) missingFromManifests(thresh int) []string {
 	counts := make(map[string]int)
 	missing := []string{}
-	for pPath := range b.payload.entries {
+	for pPath := range b.payload {
 		for _, man := range b.manifests {
 			if _, ok := man.entries[pPath]; !ok {
 				if counts[pPath]++; counts[pPath] > thresh {
@@ -194,4 +187,90 @@ func (b *Bag) missingFromManifests(thresh int) []string {
 		}
 	}
 	return missing
+}
+
+func (bag *Bag) initPayload() error {
+	bag.payload = Payload{}
+	return bag.Backend.Walk(dataDir, func(path string, size int64, err error) error {
+		if err == nil {
+			encPath := encodePath(path)
+			if _, exists := bag.payload[encPath]; exists {
+				return fmt.Errorf("path encoding collision: %s", path)
+			}
+			bag.payload[encPath] = PayloadEntry{rawPath: path, size: size}
+		}
+		return err
+	})
+}
+
+func (bag *Bag) readManifest(name string) (*Manifest, error) {
+	file, err := bag.Backend.Open(name)
+	defer file.Close()
+	if err != nil {
+		return nil, err
+	}
+	manifest, err := newManifestFromFilename(name)
+	if err != nil {
+		return nil, err
+	}
+	decodeReader, err := newReader(file, bag.encoding)
+	if err != nil {
+		return nil, err
+	}
+	return manifest, manifest.parseEntries(decodeReader)
+}
+
+func (bag *Bag) readAllManifests() error {
+	for _, manName := range bag.Backend.AllManifests() {
+		man, err := bag.readManifest(manName)
+		if err != nil {
+			return err
+		}
+		switch man.kind {
+		case payloadManifest:
+			bag.manifests = append(bag.manifests, man)
+		case tagManifest:
+			bag.tagManifests = append(bag.tagManifests, man)
+		}
+	}
+	return nil
+}
+
+func (bag *Bag) readTagFile(name string, encoding string) (*TagFile, error) {
+	reader, err := bag.Backend.Open(name)
+	defer reader.Close()
+	if err != nil {
+		return nil, err
+	}
+	decodeReader, err := newReader(reader, encoding)
+	if err != nil {
+		return nil, err
+	}
+	tags, err := ParseTags(decodeReader)
+	if err != nil {
+		err := fmt.Errorf("While reading %s: %s", name, err.Error())
+		return nil, err
+	}
+	return tags, err
+}
+
+func (bag *Bag) readFetchFile() error {
+	_, err := bag.Backend.Stat(fetchTxt)
+	if err != nil {
+		return nil // not an error if fetch doesn't exist
+	}
+	file, err := bag.Backend.Open(fetchTxt)
+	defer file.Close()
+	if err != nil {
+		return err
+	}
+	decodeReader, err := newReader(file, bag.encoding)
+	if err != nil {
+		return err
+	}
+	bag.fetch, err = parseFetch(decodeReader)
+	if err != nil {
+		return fmt.Errorf("While reading %s: %s", fetchTxt, err.Error())
+	}
+	return nil
 }

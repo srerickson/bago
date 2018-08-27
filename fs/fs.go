@@ -30,33 +30,53 @@ func (be *FSBackend) Stat(path string) (bago.FileInfo, error) {
 	if err != nil {
 		return fi, err
 	}
-	if !info.IsDir() {
+	if info.IsDir() {
 		return fi, fmt.Errorf("%s is a directory", path)
 	}
 	fi.Path, fi.Size = path, info.Size()
 	return fi, nil
 }
 
-func (be *FSBackend) Open(path string) (io.Reader, error) {
+func (be *FSBackend) Open(path string) (io.ReadCloser, error) {
 	return os.Open(filepath.Join(be.path, path))
 }
 
-func (be *FSBackend) Close(file bago.Closable) error {
+func (be *FSBackend) Close(file io.Closer) error {
 	return file.Close()
 }
 
-func (be *FSBackend) Walk(p string, f func(string, bago.FileInfo, error) error) error {
+func (be *FSBackend) Walk(p string, f func(string, int64, error) error) error {
 	wrapF := func(path string, fi os.FileInfo, err error) error {
 		if err != nil || (fi != nil && fi.IsDir()) {
 			return err
 		}
-		relPath, _ := filepath.Rel(p, path)
-		wrapFI := bago.FileInfo{Path: relPath, Size: fi.Size()}
-		return f(relPath, wrapFI, err)
+		relPath, _ := filepath.Rel(be.path, path)
+		return f(relPath, fi.Size(), err)
 	}
-	return filepath.Walk(p, wrapF)
+	return filepath.Walk(filepath.Join(be.path, p), wrapF)
 }
 
-// func (*FSBackend) OpenBag(string) (*Bag, error)
-// func (*FSBackend) WriteBag(*Bag) (string, error)
-// func (*FSBackend) Checksum(string) (string, error)
+func (be *FSBackend) Checksum(path string) (string, error) {
+	return ``, nil
+}
+
+func (be *FSBackend) AllManifests() []string {
+	manFiles, err := filepath.Glob(filepath.Join(be.path, "*manifest-*.txt"))
+	for i := range manFiles {
+		manFiles[i], _ = filepath.Rel(be.path, manFiles[i])
+	}
+	if err != nil {
+		return nil
+	}
+	return manFiles
+}
+
+func OpenBag(path string) (*bago.Bag, error) {
+	backend := &FSBackend{path: path}
+	bag := &bago.Bag{Backend: backend}
+	return bag, bag.Hydrate()
+}
+
+func WriteBag(bag *bago.Bag) (string, error) {
+	return ``, nil
+}
