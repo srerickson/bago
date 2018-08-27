@@ -17,6 +17,7 @@ const (
 
 // Bag is a bagit repository
 type Bag struct {
+	backend      *Backend
 	path         string
 	version      string
 	encoding     string
