@@ -5,12 +5,9 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash"
-	"io"
-	"os"
 	"strings"
 	"sync"
 )
@@ -34,7 +31,11 @@ type checksumJob struct {
 	err         error
 }
 
-func AlgIsAvailabe(alg string) bool {
+type checksumer interface {
+	Checksum(string, string) (string, error)
+}
+
+func algIsAvailabe(alg string) bool {
 	for _, a := range availableAlgs {
 		if a == alg {
 			return true
@@ -46,33 +47,15 @@ func AlgIsAvailabe(alg string) bool {
 func NormalizeAlgName(alg string) (string, error) {
 	alg = strings.Replace(alg, `-`, ``, 1)
 	alg = strings.ToLower(alg)
-	if AlgIsAvailabe(alg) {
+	if algIsAvailabe(alg) {
 		return alg, nil
 	}
 	msg := fmt.Sprintf(`Uknown checksum algorithm: %s`, alg)
 	return ``, errors.New(msg)
 }
 
-// Checksum returns checksum for file with given path using given algorithm
-func Checksum(path string, alg string) (string, error) {
-	h, err := newHash(alg)
-	if err != nil {
-		return "", err
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-	_, err = io.Copy(h, file)
-	if err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
 // NewHash returns Hash object for specified algorithm
-func newHash(alg string) (hash.Hash, error) {
+func NewHash(alg string) (hash.Hash, error) {
 	var h hash.Hash
 	switch alg {
 	case SHA512:
@@ -92,13 +75,11 @@ func newHash(alg string) (hash.Hash, error) {
 	return h, nil
 }
 
-func checksumWorkers(workers int, jobs chan checksumJob) chan checksumJob {
+func checksumWorkers(workers int, jobs <-chan checksumJob, checker checksumer) <-chan checksumJob {
 	results := make(chan checksumJob)
 	var wg sync.WaitGroup
-
-	//checksum workers
 	for i := 0; i < workers; i++ {
-		wg.Add(1)
+		wg.Add(1) //checksum workers
 		go func() {
 			defer wg.Done()
 			for job := range jobs {
@@ -106,7 +87,7 @@ func checksumWorkers(workers int, jobs chan checksumJob) chan checksumJob {
 					results <- job
 					break
 				}
-				job.currentSum, job.err = Checksum(job.path, job.alg)
+				job.currentSum, job.err = checker.Checksum(job.path, job.alg)
 				results <- job
 				if job.err != nil {
 					break
@@ -114,9 +95,8 @@ func checksumWorkers(workers int, jobs chan checksumJob) chan checksumJob {
 			}
 		}()
 	}
-	// Channel Closers
 	go func() {
-		wg.Wait()
+		wg.Wait() // for workers to complete
 		close(results)
 	}()
 	return results

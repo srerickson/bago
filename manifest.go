@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	"golang.org/x/text/unicode/norm"
 )
 
 const (
@@ -36,7 +34,7 @@ func NewManifest(alg string) *Manifest {
 	return manifest
 }
 
-func (man *Manifest) parseEntries(reader io.Reader) error {
+func (man *Manifest) parse(reader io.Reader) error {
 	man.entries = make(map[string]*ManifestEntry)
 	lineNum := 0
 	scanner := bufio.NewScanner(reader)
@@ -66,7 +64,7 @@ func (man *Manifest) parseEntries(reader io.Reader) error {
 
 // NewManifestFromFilename returns checksum algorithm from manifest's filename
 func newManifestFromFilename(filename string) (*Manifest, error) {
-	manifestFilenameRE := regexp.MustCompile(`(tag)?manifest-(\w+).txt$`)
+	manifestFilenameRE := regexp.MustCompile(`^(tag)?manifest-(\w+).txt$`)
 	match := manifestFilenameRE.FindStringSubmatch(filename)
 	if len(match) < 3 {
 		return nil, fmt.Errorf("Badly formed manifest filename: %s", filename)
@@ -86,23 +84,4 @@ func newManifestFromFilename(filename string) (*Manifest, error) {
 		return nil, fmt.Errorf("Badly formed manifest filename: %s", filename)
 	}
 	return manifest, nil
-}
-
-func encodePath(s string) string {
-	s = norm.NFC.String(s) // Not sure this should be here
-	s = strings.Replace(s, `%`, `%25`, -1)
-	s = strings.Replace(s, "\r", `%0D`, -1)
-	s = strings.Replace(s, "\n", `%0A`, -1)
-	s = filepath.ToSlash(s)
-	return s
-}
-
-func decodePath(s string) string {
-	lf := regexp.MustCompile(`(%0[Aa])`)
-	cr := regexp.MustCompile(`(%0[Dd])`)
-	s = filepath.FromSlash(s)
-	s = lf.ReplaceAllString(s, "\n")
-	s = cr.ReplaceAllString(s, "\r")
-	s = strings.Replace(s, `%25`, `%`, -1)
-	return s
 }

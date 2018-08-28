@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/srerickson/bago/fs"
+	"github.com/srerickson/bago"
 )
 
 var (
@@ -35,7 +35,7 @@ func main() {
 		handleErr(err)
 	}
 	if validate {
-		bag, err := fs.OpenBag(path)
+		bag, err := bago.OpenBag(path)
 		if err != nil {
 			handleErr(err)
 			os.Exit(1)

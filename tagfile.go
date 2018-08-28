@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -15,12 +16,18 @@ type TagFile struct {
 	labels []string
 }
 
-func NewTagFile() *TagFile {
-	tf := &TagFile{tags: TagSet{}}
-	return tf
+type bagitValues struct {
+	encoding string
+	version  [2]int
 }
 
-func (tf *TagFile) Append(label string, value string) []string {
+func (tf *TagFile) append(label string, value string) []string {
+	if tf.tags == nil {
+		tf.tags = TagSet{}
+	}
+	if tf.labels == nil {
+		tf.labels = []string{}
+	}
 	if _, ok := tf.tags[label]; !ok {
 		tf.tags[label] = []string{value}
 		tf.labels = append(tf.labels, label)
@@ -30,21 +37,9 @@ func (tf *TagFile) Append(label string, value string) []string {
 	return tf.tags[label]
 }
 
-func (tf *TagFile) Get(label string) ([]string, bool) {
-	val, ok := tf.tags[label]
-	return val, ok
-}
-
-func (tf *TagFile) Len() int {
-	return len(tf.labels)
-}
-
-func (tf *TagFile) Labels() []string {
-	return tf.labels
-}
-
-func ParseTags(reader io.Reader) (*TagFile, error) {
-	tf := NewTagFile()
+func (tf *TagFile) parse(reader io.Reader) error {
+	tf.tags = nil
+	tf.labels = nil
 	lineNum := 0
 	emptyLineRE := regexp.MustCompile(`^\s*$`)
 	labelLineRe := regexp.MustCompile(`^([^:\s][^:]*):(.*)`)
@@ -66,46 +61,57 @@ func ParseTags(reader io.Reader) (*TagFile, error) {
 				tf.tags[prevLabel][valIndx] += " " + strings.Trim(line, ` `)
 				continue
 			}
-			return nil, err
+			return err
 		}
 		// must be start of a new label/value pair
 		match := labelLineRe.FindStringSubmatch(line)
 		if len(match) < 3 {
-			return nil, err
+			return err
 		}
 		label := strings.Trim(match[1], ` `)
 		value := strings.Trim(match[2], ` `)
-		tf.Append(label, value)
+		tf.append(label, value)
 	}
-	return tf, nil
+	return nil
 }
 
-func getBagitTxtValues(tf *TagFile) (vers string, enc string, err error) {
+func (tf *TagFile) bagitTxtValues() (ret bagitValues, err error) {
 	labels := []string{`BagIt-Version`, `Tag-File-Character-Encoding`}
 	patterns := []*regexp.Regexp{
 		regexp.MustCompile(`(\d+)\.(\d+)`),
 		regexp.MustCompile(`^\S`),
 	}
-	returnVals := [...]string{``, ``}
+	tmpVals := [...]string{``, ``}
 	if len(tf.labels) != 2 {
 		err = fmt.Errorf(`%s should have %s and %s`, bagitTxt, labels[0], labels[1])
-		return ``, ``, err
+		return ret, err
 	}
 	for i, label := range tf.labels {
 		if label != labels[i] {
-			err = fmt.Errorf(`Expected %s in line %d of %s to`, labels[i], i, bagitTxt)
-			return ``, ``, err
+			err = fmt.Errorf(`Expected %s in line %d of %s to`, label, i, bagitTxt)
+			return ret, err
 		}
 		vals, ok := tf.tags[label]
 		if !ok || len(vals) != 1 {
 			err = fmt.Errorf(`Expected 1 entry for %s in %s to`, label, bagitTxt)
-			return ``, ``, err
+			return ret, err
 		}
 		if !patterns[i].MatchString(vals[0]) {
 			err = fmt.Errorf(`Bad value for %s in %s: %s`, label, bagitTxt, vals[0])
-			return ``, ``, err
+			return ret, err
 		}
-		returnVals[i] = vals[0]
+		tmpVals[i] = vals[0]
 	}
-	return returnVals[0], returnVals[1], nil
+	// FIXME -- this can be much cleaner
+	// Parse versions and check
+	match := patterns[0].FindStringSubmatch(tmpVals[0])
+	ret.version[0], _ = strconv.Atoi(match[1])
+	ret.version[1], _ = strconv.Atoi(match[2])
+
+	if ret.version[0] > 1 {
+		return ret, fmt.Errorf("Unsupported version: %d.%d", ret.version[0], ret.version[1])
+	}
+	ret.encoding = tmpVals[1]
+
+	return ret, nil
 }

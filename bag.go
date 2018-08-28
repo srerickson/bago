@@ -3,6 +3,7 @@ package bago
 import (
 	"errors"
 	"fmt"
+	"io"
 )
 
 const (
@@ -15,14 +16,14 @@ const (
 
 // Bag is a bagit repository
 type Bag struct {
-	Backend      Backend     // backend interface
-	version      string      // from bagit.txt
+	Backend      Backend     // backend interface (usually FSBag)
+	version      [2]int      // from bagit txt, major and minor ints
 	encoding     string      // from bagit.txt
 	payload      Payload     // contents of the data directory
-	bagInfo      *TagFile    // contents of bag-info.txt
+	bagInfo      TagFile     // contents of bag-info.txt
 	manifests    []*Manifest // list of payload manifests
 	tagManifests []*Manifest // list of tag file manifests
-	fetch        FetchFile   // contents of fetch.txt
+	fetch        fetch       // contents of fetch.txt
 }
 
 type Payload map[string]PayloadEntry
@@ -36,15 +37,11 @@ func (bag *Bag) Hydrate() error {
 	if bag.Backend == nil {
 		return errors.New("Cannot hydrate a bag with no Backend\n")
 	}
-	bagitTags, err := bag.readTagFile(bagitTxt, `UTF-8`)
+	err := bag.readBagitTxt()
 	if err != nil {
 		return err
 	}
-	bag.version, bag.encoding, err = getBagitTxtValues(bagitTags)
-	if err != nil {
-		return err
-	}
-	bag.bagInfo, _ = bag.readTagFile(bagInfo, bag.encoding)
+	_ = bag.readBagInfo()
 	err = bag.readFetchFile()
 	if err != nil {
 		return err
@@ -57,9 +54,6 @@ func (bag *Bag) Hydrate() error {
 	if err != nil {
 		return err
 	}
-	if len(bag.manifests) == 0 {
-		return errors.New(`no manifests found`)
-	}
 	return nil
 }
 
@@ -67,7 +61,7 @@ func (bag *Bag) Hydrate() error {
 // See: https://tools.ietf.org/html/draft-kunze-bagit-16#section-3
 func (b *Bag) IsComplete(errCb func(error)) bool {
 	complete := true
-	if b.version == `` && b.encoding == `` {
+	if b.encoding == `` {
 		complete = false
 		if errCb != nil {
 			errCb(fmt.Errorf("Missing required fields in %s", bagitTxt))
@@ -116,6 +110,7 @@ func (b *Bag) IsComplete(errCb func(error)) bool {
 }
 
 // IsValid returns whether the bag at path is valid
+// A valid bag is complete and checksums listed in all manifests are correct.
 func (b *Bag) IsValid(errCb func(error)) bool {
 	valid := b.IsComplete(errCb)
 	if !valid {
@@ -123,12 +118,12 @@ func (b *Bag) IsValid(errCb func(error)) bool {
 	}
 	// queue up checksum jobs
 	jobInput := make(chan checksumJob)
-	jobOutput := checksumWorkers(2, jobInput)
+	jobOutput := checksumWorkers(2, jobInput, b.Backend)
 	go func() {
 		defer close(jobInput)
-		// checksums for all manifest entries
 		for _, m := range append(b.manifests, b.tagManifests...) {
 			for path, entry := range m.entries {
+				// put checksum jobs for each manifest entries on the worker queue
 				jobInput <- checksumJob{
 					path:        decodePath(path),
 					alg:         m.algorithm,
@@ -148,6 +143,7 @@ func (b *Bag) IsValid(errCb func(error)) bool {
 	return valid
 }
 
+// missingTagFiles scans tag manifest entries and reports missing tag files
 func (bag *Bag) missingTagFiles() []string {
 	missing := []string{}
 	for _, m := range bag.tagManifests {
@@ -161,6 +157,7 @@ func (bag *Bag) missingTagFiles() []string {
 	return missing
 }
 
+// missingFromPayload scans manifests for files not present in the payload.
 func (b *Bag) missingFromPayload() []string {
 	missing := []string{}
 	for _, m := range b.manifests {
@@ -173,6 +170,7 @@ func (b *Bag) missingFromPayload() []string {
 	return missing
 }
 
+// missingFromManifests scans payload for files not accounted for in manifests
 // thesh is the min number of manifests that a file can be missing from
 func (b *Bag) missingFromManifests(thresh int) []string {
 	counts := make(map[string]int)
@@ -189,6 +187,8 @@ func (b *Bag) missingFromManifests(thresh int) []string {
 	return missing
 }
 
+// walk the payload directory (`data`) tree and populate bag.payload with the
+// files found there. File paths are noramilzed with encodePath
 func (bag *Bag) initPayload() error {
 	bag.payload = Payload{}
 	return bag.Backend.Walk(dataDir, func(path string, size int64, err error) error {
@@ -203,23 +203,16 @@ func (bag *Bag) initPayload() error {
 	})
 }
 
+// read and parse manifest file with the given name
 func (bag *Bag) readManifest(name string) (*Manifest, error) {
-	file, err := bag.Backend.Open(name)
-	defer file.Close()
-	if err != nil {
-		return nil, err
-	}
 	manifest, err := newManifestFromFilename(name)
 	if err != nil {
 		return nil, err
 	}
-	decodeReader, err := newReader(file, bag.encoding)
-	if err != nil {
-		return nil, err
-	}
-	return manifest, manifest.parseEntries(decodeReader)
+	return manifest, bag.parse(manifest, name, bag.encoding)
 }
 
+// read and pars all manifests (both payload and tag manifests)
 func (bag *Bag) readAllManifests() error {
 	for _, manName := range bag.Backend.AllManifests() {
 		man, err := bag.readManifest(manName)
@@ -231,46 +224,65 @@ func (bag *Bag) readAllManifests() error {
 			bag.manifests = append(bag.manifests, man)
 		case tagManifest:
 			bag.tagManifests = append(bag.tagManifests, man)
+		default:
+			return fmt.Errorf("Unknown manifest type: %s", manName)
 		}
 	}
 	return nil
 }
 
-func (bag *Bag) readTagFile(name string, encoding string) (*TagFile, error) {
-	reader, err := bag.Backend.Open(name)
-	defer reader.Close()
+// read and parse bagit.txt
+func (bag *Bag) readBagitTxt() error {
+	var t TagFile
+	err := bag.parse(&t, bagitTxt, `UTF-8`)
 	if err != nil {
-		return nil, err
+		return nil
 	}
-	decodeReader, err := newReader(reader, encoding)
+	vals, err := t.bagitTxtValues()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	tags, err := ParseTags(decodeReader)
-	if err != nil {
-		err := fmt.Errorf("While reading %s: %s", name, err.Error())
-		return nil, err
-	}
-	return tags, err
+	bag.encoding = vals.encoding
+	bag.version = vals.version
+	return nil
 }
 
+// read and parse bag-info.txt
+func (bag *Bag) readBagInfo() error {
+	return bag.parse(&bag.bagInfo, bagInfo, bag.encoding)
+}
+
+// read and parse fetch.txt
 func (bag *Bag) readFetchFile() error {
 	_, err := bag.Backend.Stat(fetchTxt)
 	if err != nil {
 		return nil // not an error if fetch doesn't exist
 	}
-	file, err := bag.Backend.Open(fetchTxt)
-	defer file.Close()
+	return bag.parse(&bag.fetch, fetchTxt, bag.encoding)
+}
+
+// parser is an interface used by all bag components types:
+// manigest, tagFile, and Fetch.
+type parser interface {
+	parse(io.Reader) error
+}
+
+// parse is a helper function for parsing compontent files in a bag.
+// It wraps the logic opening, decoding, and parsing the bag.
+func (bag *Bag) parse(parser parser, name string, encoding string) error {
+	reader, err := bag.Backend.Open(name)
+	defer reader.Close()
 	if err != nil {
 		return err
 	}
-	decodeReader, err := newReader(file, bag.encoding)
+	decodeReader, err := newDecodeReader(reader, encoding)
 	if err != nil {
 		return err
 	}
-	bag.fetch, err = parseFetch(decodeReader)
+	err = parser.parse(decodeReader)
 	if err != nil {
-		return fmt.Errorf("While reading %s: %s", fetchTxt, err.Error())
+		err := fmt.Errorf("While parsing %s: %s", name, err.Error())
+		return err
 	}
 	return nil
 }

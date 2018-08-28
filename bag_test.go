@@ -1,4 +1,4 @@
-package fs
+package bago
 
 import (
 	"os"
@@ -17,7 +17,7 @@ type TestVersionGroup struct {
 
 func testDataPath() string {
 	_, fPath, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(fPath), `../test-data`)
+	return filepath.Join(filepath.Dir(fPath), `test-data`)
 }
 
 func testBags() TestBagGroup {

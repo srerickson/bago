@@ -9,15 +9,15 @@ import (
 	"strings"
 )
 
-type FetchFile []Fetch
-type Fetch struct {
+type fetch []fetchEntry
+type fetchEntry struct {
 	url  string
 	size string
 	path string
 }
 
-func parseFetch(reader io.Reader) (FetchFile, error) {
-	fFile := FetchFile{}
+func (f *fetch) parse(reader io.Reader) error {
+	*f = nil
 	lineNum := 0
 	emptyLineRE := regexp.MustCompile(`^\s*$`)
 	fetchRE := regexp.MustCompile(`^(\S+)\s+(\S+)\s+(.*)$`)
@@ -30,18 +30,17 @@ func parseFetch(reader io.Reader) (FetchFile, error) {
 		}
 		match := fetchRE.FindStringSubmatch(line)
 		if len(match) < 4 {
-			return nil, fmt.Errorf("Syntax error at line: %d", lineNum)
+			return fmt.Errorf("Syntax error at line: %d", lineNum)
 		}
-		f := Fetch{}
-		f.url = strings.Trim(match[1], ` `)
-		f.size = strings.Trim(match[2], ` `)
+		entry := fetchEntry{}
+		entry.url = strings.Trim(match[1], ` `)
+		entry.size = strings.Trim(match[2], ` `)
 		match[3] = strings.Trim(match[3], ` `)
-		f.path = filepath.Clean(decodePath(match[3]))
-		if strings.HasPrefix(f.path, `..`) {
-			return nil, fmt.Errorf("Out of scope path at line: %d", lineNum)
+		entry.path = filepath.Clean(decodePath(match[3]))
+		if strings.HasPrefix(entry.path, `..`) {
+			return fmt.Errorf("Out of scope path at line: %d", lineNum)
 		}
-		fFile = append(fFile, f)
-
+		*f = append(*f, entry)
 	}
-	return fFile, nil
+	return nil
 }
