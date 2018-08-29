@@ -111,15 +111,5 @@ func (tf *TagFile) bagitTxtValues() (ret bagitValues, err error) {
 	ret.version[0], _ = strconv.Atoi(tmpVals[0])
 	ret.version[1], _ = strconv.Atoi(tmpVals[1])
 	ret.encoding = tmpVals[2]
-	switch ret.version {
-	case [...]int{1, 0}:
-	case [...]int{0, 97}:
-	case [...]int{0, 96}:
-	case [...]int{0, 95}:
-	case [...]int{0, 94}:
-	case [...]int{0, 93}:
-	default:
-		return ret, fmt.Errorf("Unsupported version: %d.%d", ret.version[0], ret.version[1])
-	}
 	return ret, nil
 }

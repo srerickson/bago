@@ -10,14 +10,20 @@ import (
 )
 
 var (
-	validate bool
-	quiet    bool
-	path     string
+	validate  bool
+	create    bool
+	processes int
+	algorithm string
+	quiet     bool
+	path      string
 )
 
 func init() {
-	flag.BoolVar(&validate, "validate", false, "validate bag")
-	flag.BoolVar(&quiet, "quiet", false, "no ouput (on STDOUT)")
+	flag.BoolVar(&create, `create`, false, `create bag`)
+	flag.IntVar(&processes, `processes`, 1, `number of processes to use`)
+	flag.StringVar(&algorithm, `algorithm`, `sha512`, `checksum algorithm to use`)
+	flag.BoolVar(&validate, `validate`, false, `validate bag`)
+	flag.BoolVar(&quiet, `quiet`, false, `no ouput (on STDOUT)`)
 
 }
 
@@ -34,7 +40,13 @@ func main() {
 		err := errors.New(`no path given`)
 		handleErr(err)
 	}
-	if validate {
+	if create {
+		_, err := bago.CreateBag(path, algorithm, processes)
+		if err != nil {
+			handleErr(err)
+			os.Exit(1)
+		}
+	} else if validate {
 		bag, err := bago.OpenBag(path)
 		if err != nil {
 			handleErr(err)

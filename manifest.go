@@ -28,6 +28,18 @@ type ManifestEntry struct {
 
 var manifestLineRE = regexp.MustCompile(`^(\S+)\s+(\S.*)$`)
 
+func (man *Manifest) Append(path string, sum string) error {
+	if man.entries == nil {
+		man.entries = map[string]*ManifestEntry{}
+	}
+	encPath := encodePath(path)
+	if _, exists := man.entries[encPath]; exists {
+		return fmt.Errorf("duplicate entry")
+	}
+	man.entries[encPath] = &ManifestEntry{rawPath: path, sum: sum}
+	return nil
+}
+
 // NewManifest returns an initialized manifest
 func NewManifest(alg string) *Manifest {
 	manifest := &Manifest{algorithm: alg}
@@ -35,7 +47,6 @@ func NewManifest(alg string) *Manifest {
 }
 
 func (man *Manifest) parse(reader io.Reader) error {
-	man.entries = make(map[string]*ManifestEntry)
 	lineNum := 0
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
@@ -44,18 +55,15 @@ func (man *Manifest) parse(reader io.Reader) error {
 		if len(match) < 3 {
 			return fmt.Errorf("Syntax error at line: %d", lineNum)
 		}
-		_, exists := man.entries[match[2]]
-		if exists {
-			return fmt.Errorf("Duplicate manifest entry at line: %d", lineNum)
-		}
 		cleanPath := filepath.Clean(decodePath(match[2]))
 		if strings.HasPrefix(cleanPath, `..`) {
 			return fmt.Errorf("Out of scope path at line: %d", lineNum)
 		}
 		sum := strings.Trim(match[1], ` `)
-
-		man.entries[encodePath(cleanPath)] = &ManifestEntry{
-			rawPath: cleanPath, sum: sum}
+		err := man.Append(cleanPath, sum)
+		if err != nil {
+			return fmt.Errorf("line %d: %s", lineNum, err.Error())
+		}
 	}
 	return nil
 }

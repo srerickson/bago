@@ -90,6 +90,37 @@ func OpenBag(path string) (*Bag, error) {
 	return bag, bag.Hydrate()
 }
 
-func WriteBag(bag *Bag) (string, error) {
-	return ``, nil
+// Create Bag Creates a new Bag with FSBag backend
+func CreateBag(srcPath string, alg string, workers int) (*Bag, error) {
+
+	// TMP Backend is just used to create the initial payload
+	tmpBE := &FSBag{path: srcPath}
+	// newBag := &Bag{version: [2]int{1, 0}, encoding: `UTF-8`}
+	manifest := NewManifest(alg)
+	checksumQueue := make(chan checksumJob)
+	checksumOutput := checksumWorkers(workers, checksumQueue, tmpBE)
+
+	if workers < 1 {
+		workers = 1
+	}
+
+	go func(alg string) {
+		defer close(checksumQueue)
+		tmpBE.Walk(`.`, func(p string, size int64, err error) error {
+			checksumQueue <- checksumJob{path: p, alg: alg, err: err}
+			return err
+		})
+	}(alg)
+	for ch := range checksumOutput {
+		if ch.err != nil {
+			return nil, ch.err
+		}
+		err := manifest.Append(filepath.Join(`data`, ch.path), ch.currentSum)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return nil, nil
+
 }

@@ -61,7 +61,7 @@ func (bag *Bag) Hydrate() error {
 // See: https://tools.ietf.org/html/draft-kunze-bagit-16#section-3
 func (b *Bag) IsComplete(errCb func(error)) bool {
 	complete := true
-	if b.encoding == `` {
+	if b.encoding == `` || !b.versionOk() {
 		complete = false
 		if errCb != nil {
 			errCb(fmt.Errorf("Missing required fields in %s", bagitTxt))
@@ -225,7 +225,7 @@ func (bag *Bag) readAllManifests() error {
 		case tagManifest:
 			bag.tagManifests = append(bag.tagManifests, man)
 		default:
-			return fmt.Errorf("Unknown manifest type: %s", manName)
+			return fmt.Errorf("Unexpected manifest type: %s", manName)
 		}
 	}
 	return nil
@@ -236,7 +236,7 @@ func (bag *Bag) readBagitTxt() error {
 	var t TagFile
 	err := bag.parse(&t, bagitTxt, `UTF-8`)
 	if err != nil {
-		return nil
+		return err
 	}
 	vals, err := t.bagitTxtValues()
 	if err != nil {
@@ -285,4 +285,18 @@ func (bag *Bag) parse(parser parser, name string, encoding string) error {
 		return err
 	}
 	return nil
+}
+
+func (bag *Bag) versionOk() bool {
+	switch bag.version {
+	case [...]int{1, 0}:
+	case [...]int{0, 97}:
+	case [...]int{0, 96}:
+	case [...]int{0, 95}:
+	case [...]int{0, 94}:
+	case [...]int{0, 93}:
+	default:
+		return false
+	}
+	return true
 }
