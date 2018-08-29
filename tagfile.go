@@ -75,14 +75,16 @@ func (tf *TagFile) parse(reader io.Reader) error {
 	return nil
 }
 
+// bagitTxtValues validates structure of TagFile from bagit.txt and returns
+// tag values.
 func (tf *TagFile) bagitTxtValues() (ret bagitValues, err error) {
-	labels := []string{`BagIt-Version`, `Tag-File-Character-Encoding`}
-	patterns := []*regexp.Regexp{
+	labels := [...]string{`BagIt-Version`, `Tag-File-Character-Encoding`}
+	patterns := [...]*regexp.Regexp{
 		regexp.MustCompile(`(\d+)\.(\d+)`),
-		regexp.MustCompile(`^\S`),
+		regexp.MustCompile(`^(\S+)`),
 	}
-	tmpVals := [...]string{``, ``}
-	if len(tf.labels) != 2 {
+	tmpVals := []string{}
+	if len(tf.labels) != len(labels) {
 		err = fmt.Errorf(`%s should have %s and %s`, bagitTxt, labels[0], labels[1])
 		return ret, err
 	}
@@ -96,22 +98,28 @@ func (tf *TagFile) bagitTxtValues() (ret bagitValues, err error) {
 			err = fmt.Errorf(`Expected 1 entry for %s in %s to`, label, bagitTxt)
 			return ret, err
 		}
-		if !patterns[i].MatchString(vals[0]) {
+		matches := patterns[i].FindStringSubmatch(vals[0])
+		if len(matches) == 0 {
 			err = fmt.Errorf(`Bad value for %s in %s: %s`, label, bagitTxt, vals[0])
 			return ret, err
 		}
-		tmpVals[i] = vals[0]
+		tmpVals = append(tmpVals, matches[1:]...)
 	}
-	// FIXME -- this can be much cleaner
-	// Parse versions and check
-	match := patterns[0].FindStringSubmatch(tmpVals[0])
-	ret.version[0], _ = strconv.Atoi(match[1])
-	ret.version[1], _ = strconv.Atoi(match[2])
-
-	if ret.version[0] > 1 {
+	if len(tmpVals) != 3 {
+		return ret, fmt.Errorf(`unexpected values parsing %s`, bagitTxt)
+	}
+	ret.version[0], _ = strconv.Atoi(tmpVals[0])
+	ret.version[1], _ = strconv.Atoi(tmpVals[1])
+	ret.encoding = tmpVals[2]
+	switch ret.version {
+	case [...]int{1, 0}:
+	case [...]int{0, 97}:
+	case [...]int{0, 96}:
+	case [...]int{0, 95}:
+	case [...]int{0, 94}:
+	case [...]int{0, 93}:
+	default:
 		return ret, fmt.Errorf("Unsupported version: %d.%d", ret.version[0], ret.version[1])
 	}
-	ret.encoding = tmpVals[1]
-
 	return ret, nil
 }
