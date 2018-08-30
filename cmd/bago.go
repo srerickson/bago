@@ -16,6 +16,7 @@ var (
 	algorithm string
 	quiet     bool
 	path      string
+	outPath   string
 )
 
 func init() {
@@ -24,7 +25,7 @@ func init() {
 	flag.StringVar(&algorithm, `algorithm`, `sha512`, `checksum algorithm to use`)
 	flag.BoolVar(&validate, `validate`, false, `validate bag`)
 	flag.BoolVar(&quiet, `quiet`, false, `no ouput (on STDOUT)`)
-
+	flag.StringVar(&outPath, `o`, ``, `output path`)
 }
 
 func handleErr(err error) {
@@ -41,7 +42,10 @@ func main() {
 		handleErr(err)
 	}
 	if create {
-		_, err := bago.CreateBag(path, algorithm, processes)
+		if outPath == `` {
+			outPath = path
+		}
+		_, err := bago.CreateBag(path, outPath, algorithm, processes)
 		if err != nil {
 			handleErr(err)
 			os.Exit(1)
