@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 type TagSet map[string][]string
@@ -37,40 +38,49 @@ func (tf *TagFile) append(label string, value string) []string {
 	return tf.tags[label]
 }
 
+// Set is required by the Flag interface so we can collect tag values from the
+// command line. It is also used in parse()
+func (tf *TagFile) Set(val string) error {
+	labelLineRe := regexp.MustCompile(`^([^:\s][^:]*):(.*)`)
+	match := labelLineRe.FindStringSubmatch(val)
+	if len(match) < 3 {
+		return fmt.Errorf("tags should be in the form 'tag-name: value'")
+	}
+	label := strings.Trim(match[1], ` `)
+	value := strings.Trim(match[2], ` `)
+	tf.append(label, value)
+	return nil
+}
+
 func (tf *TagFile) parse(reader io.Reader) error {
 	tf.tags = nil
 	tf.labels = nil
 	lineNum := 0
 	emptyLineRE := regexp.MustCompile(`^\s*$`)
-	labelLineRe := regexp.MustCompile(`^([^:\s][^:]*):(.*)`)
 	contLineRE := regexp.MustCompile(`^\s+\S+`)
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
 		lineNum++
 		line := scanner.Text()
-		err := fmt.Errorf("Syntax error at line: %d", lineNum)
 		if emptyLineRE.MatchString(line) {
 			continue // ignore empty lines
-		}
-		if contLineRE.MatchString(line) {
+		} else if contLineRE.MatchString(line) {
 			// continuation of previous label
 			l := len(tf.labels)
-			if l > 0 {
-				prevLabel := tf.labels[l-1]
-				valIndx := len(tf.tags[prevLabel]) - 1
-				tf.tags[prevLabel][valIndx] += " " + strings.Trim(line, ` `)
-				continue
+			if l == 0 {
+				return fmt.Errorf("Syntax error at line: %d", lineNum)
 			}
-			return err
+			prevLabel := tf.labels[l-1]
+			valIndx := len(tf.tags[prevLabel]) - 1
+			tf.tags[prevLabel][valIndx] += " " + strings.Trim(line, ` `)
+		} else {
+			// must be start of a new label/value pair. handle with Set()
+			err := tf.Set(line)
+			if err != nil {
+				return fmt.Errorf("Syntax error on line %d: %s", lineNum, err.Error())
+			}
 		}
-		// must be start of a new label/value pair
-		match := labelLineRe.FindStringSubmatch(line)
-		if len(match) < 3 {
-			return err
-		}
-		label := strings.Trim(match[1], ` `)
-		value := strings.Trim(match[2], ` `)
-		tf.append(label, value)
+
 	}
 	return nil
 }
@@ -112,4 +122,31 @@ func (tf *TagFile) bagitTxtValues() (ret bagitValues, err error) {
 	ret.version[1], _ = strconv.Atoi(tmpVals[1])
 	ret.encoding = tmpVals[2]
 	return ret, nil
+}
+
+// String returns string representation of the tag file following the
+// the BagIt specification. Lines are wrapped
+func (tf *TagFile) String() string {
+	var builder strings.Builder
+	for _, label := range tf.labels {
+		for _, val := range tf.tags[label] {
+			fmt.Fprintf(&builder, "%s:", label)
+			runesOnLine := utf8.RuneCountInString(label) + 1
+			scanner := bufio.NewScanner(strings.NewReader(val))
+			scanner.Split(bufio.ScanWords)
+			for scanner.Scan() {
+				word := scanner.Text()
+				len := utf8.RuneCountInString(word)
+				if (runesOnLine + len) < 79 {
+					fmt.Fprintf(&builder, " %s", word)
+					runesOnLine += (len + 1)
+				} else {
+					fmt.Fprintf(&builder, "\n  %s", word)
+					runesOnLine = len + 2
+				}
+			}
+			builder.WriteString("\n")
+		}
+	}
+	return builder.String()
 }

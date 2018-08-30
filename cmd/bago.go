@@ -17,6 +17,7 @@ var (
 	quiet     bool
 	path      string
 	outPath   string
+	tags      bago.TagFile
 )
 
 func init() {
@@ -26,6 +27,7 @@ func init() {
 	flag.BoolVar(&validate, `validate`, false, `validate bag`)
 	flag.BoolVar(&quiet, `quiet`, false, `no ouput (on STDOUT)`)
 	flag.StringVar(&outPath, `o`, ``, `output path`)
+	flag.Var(&tags, `t`, `set tag`)
 }
 
 func handleErr(err error) {
@@ -60,7 +62,7 @@ func main() {
 		if !valid {
 			os.Exit(1)
 		}
-		// bag.Print()
+		// fmt.Println(bag.Info.String())
 	}
 
 }

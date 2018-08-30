@@ -20,7 +20,7 @@ type Bag struct {
 	version      [2]int      // from bagit txt, major and minor ints
 	encoding     string      // from bagit.txt
 	payload      Payload     // contents of the data directory
-	bagInfo      TagFile     // contents of bag-info.txt
+	Info         TagFile     // contents of bag-info.txt
 	manifests    []*Manifest // list of payload manifests
 	tagManifests []*Manifest // list of tag file manifests
 	fetch        fetch       // contents of fetch.txt
@@ -249,7 +249,7 @@ func (bag *Bag) readBagitTxt() error {
 
 // read and parse bag-info.txt
 func (bag *Bag) readBagInfo() error {
-	return bag.parse(&bag.bagInfo, bagInfo, bag.encoding)
+	return bag.parse(&bag.Info, bagInfo, bag.encoding)
 }
 
 // read and parse fetch.txt
