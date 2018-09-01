@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 
 	"github.com/srerickson/bago"
@@ -13,6 +15,7 @@ var (
 	validate  bool
 	create    bool
 	processes int
+	profile   bool
 	algorithm string
 	quiet     bool
 	path      string
@@ -22,6 +25,7 @@ var (
 
 func init() {
 	flag.BoolVar(&create, `create`, false, `create bag`)
+	flag.BoolVar(&profile, `profile`, false, `use profile`)
 	flag.IntVar(&processes, `processes`, 1, `number of processes to use`)
 	flag.StringVar(&algorithm, `algorithm`, `sha512`, `checksum algorithm to use`)
 	flag.BoolVar(&validate, `validate`, false, `validate bag`)
@@ -63,6 +67,21 @@ func main() {
 			os.Exit(1)
 		}
 		// fmt.Println(bag.Info.String())
+	} else if profile {
+		profile := bago.Profile{}
+		data, err := ioutil.ReadFile(path)
+		if err != nil {
+			handleErr(err)
+			os.Exit(1)
+		}
+		err = json.Unmarshal(data, &profile)
+		if err != nil {
+			handleErr(err)
+			os.Exit(1)
+		}
+		fmt.Printf("%v\n", profile)
+		for k, v := range profile.BagInfo {
+			fmt.Printf("%s, %v\n", k, v)
+		}
 	}
-
 }
