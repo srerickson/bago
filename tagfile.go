@@ -128,9 +128,14 @@ func (tf *TagFile) bagitTxtValues() (ret bagitValues, err error) {
 // the BagIt specification. Lines are wrapped
 func (tf *TagFile) String() string {
 	var builder strings.Builder
+	tf.Write(&builder)
+	return builder.String()
+}
+
+func (tf *TagFile) Write(writer io.Writer) error {
 	for _, label := range tf.labels {
 		for _, val := range tf.tags[label] {
-			fmt.Fprintf(&builder, "%s:", label)
+			fmt.Fprintf(writer, "%s:", label)
 			runesOnLine := utf8.RuneCountInString(label) + 1
 			scanner := bufio.NewScanner(strings.NewReader(val))
 			scanner.Split(bufio.ScanWords)
@@ -138,15 +143,15 @@ func (tf *TagFile) String() string {
 				word := scanner.Text()
 				len := utf8.RuneCountInString(word)
 				if (runesOnLine + len) < 79 {
-					fmt.Fprintf(&builder, " %s", word)
+					fmt.Fprintf(writer, " %s", word)
 					runesOnLine += (len + 1)
 				} else {
-					fmt.Fprintf(&builder, "\n  %s", word)
+					fmt.Fprintf(writer, "\n  %s", word)
 					runesOnLine = len + 2
 				}
 			}
-			builder.WriteString("\n")
+			io.WriteString(writer, "\n")
 		}
 	}
-	return builder.String()
+	return nil
 }

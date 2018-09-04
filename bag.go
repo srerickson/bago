@@ -270,7 +270,7 @@ type parser interface {
 // parse is a helper function for parsing compontent files in a bag.
 // It wraps the logic opening, decoding, and parsing the bag.
 func (bag *Bag) parse(parser parser, name string, encoding string) error {
-	reader, err := bag.Backend.Open(name)
+	reader, err := bag.Backend.NewReader(name)
 	defer reader.Close()
 	if err != nil {
 		return err

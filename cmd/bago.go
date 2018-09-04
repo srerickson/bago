@@ -25,10 +25,10 @@ var (
 
 func init() {
 	flag.BoolVar(&create, `create`, false, `create bag`)
-	flag.BoolVar(&profile, `profile`, false, `use profile`)
-	flag.IntVar(&processes, `processes`, 1, `number of processes to use`)
-	flag.StringVar(&algorithm, `algorithm`, `sha512`, `checksum algorithm to use`)
 	flag.BoolVar(&validate, `validate`, false, `validate bag`)
+	flag.StringVar(&algorithm, `algorithm`, `sha512`, `checksum algorithm to use`)
+	flag.IntVar(&processes, `processes`, 1, `number of processes to use`)
+	flag.BoolVar(&profile, `profile`, false, `use profile`)
 	flag.BoolVar(&quiet, `quiet`, false, `no ouput (on STDOUT)`)
 	flag.StringVar(&outPath, `o`, ``, `output path`)
 	flag.Var(&tags, `t`, `set tag`)
@@ -48,10 +48,14 @@ func main() {
 		handleErr(err)
 	}
 	if create {
-		if outPath == `` {
-			outPath = path
+		opts := bago.CreateBagOptions{
+			SrcDir:     path,
+			DstPath:    outPath,
+			Algorithms: []string{algorithm},
+			Workers:    processes,
+			InPlace:    outPath == ``,
 		}
-		_, err := bago.CreateBag(path, outPath, algorithm, processes)
+		_, err := bago.CreateBag(&opts)
 		if err != nil {
 			handleErr(err)
 			os.Exit(1)

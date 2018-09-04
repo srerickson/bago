@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 )
@@ -16,12 +15,11 @@ type FileInfo struct {
 
 type Backend interface {
 	Stat(string) (FileInfo, error) // should throw error for directories
-	Open(string) (io.ReadCloser, error)
+	NewReader(string) (io.ReadCloser, error)
+	NewWriter(string) (io.WriteCloser, error)
 	AllManifests() []string
 	Walk(string, func(string, int64, error) error) error
 	Checksum(string, string) (string, error)
-	// OpenBag(string) (*Bag, error)
-	// WriteBag(*Bag) (string, error)
 }
 
 // FSBag Implements Backend for the filesystem
@@ -42,8 +40,12 @@ func (be *FSBag) Stat(path string) (FileInfo, error) {
 	return fi, nil
 }
 
-func (be *FSBag) Open(path string) (io.ReadCloser, error) {
+func (be *FSBag) NewReader(path string) (io.ReadCloser, error) {
 	return os.Open(filepath.Join(be.path, path))
+}
+
+func (be *FSBag) NewWriter(path string) (io.WriteCloser, error) {
+	return os.Create(filepath.Join(be.path, path))
 }
 
 func (be *FSBag) Walk(p string, f func(string, int64, error) error) error {
@@ -83,81 +85,4 @@ func (be *FSBag) AllManifests() []string {
 		return nil
 	}
 	return manFiles
-}
-
-func OpenBag(path string) (*Bag, error) {
-	backend := &FSBag{path: path}
-	bag := &Bag{Backend: backend}
-	return bag, bag.Hydrate()
-}
-
-// Create Bag Creates a new Bag with FSBag backend
-func CreateBag(srcPath string, dstPath string, alg string, workers int) (*Bag, error) {
-
-	for _, p := range [2]*string{&srcPath, &dstPath} {
-		var err error
-		*p, err = filepath.Abs(*p)
-		if err != nil {
-			return nil, fmt.Errorf("could not determine absolute path for %s", *p)
-		}
-	}
-
-	if srcPath == dstPath {
-		// inplace bag creation with tmp directory
-		tmdpDir, err := ioutil.TempDir(filepath.Dir(dstPath), filepath.Base(srcPath))
-		defer os.RemoveAll(tmdpDir) // Dangerous
-		if err != nil {
-			return nil, err
-		}
-		fmt.Printf(tmdpDir)
-	} else {
-		dstInfo, err := os.Stat(dstPath)
-		if err != nil {
-			// if dstPath doesn't exist, try to create it
-			err = os.Mkdir(dstPath, 0755)
-			if err != nil {
-				return nil, err
-			}
-		}
-		// if dstPath does exist, treat it as the parent of the new bag directory
-		if !dstInfo.IsDir() {
-			return nil, fmt.Errorf("expected a directory: %s", dstPath)
-		}
-		dstPath = filepath.Join(dstPath, filepath.Base(srcPath))
-		err = os.Mkdir(dstPath, 0755)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// TMP Backend is just used to create the initial payload
-	tmpBE := &FSBag{path: srcPath}
-	// newBag := &Bag{version: [2]int{1, 0}, encoding: `UTF-8`}
-	manifest := NewManifest(alg)
-	checksumQueue := make(chan checksumJob)
-	checksumOutput := checksumWorkers(workers, checksumQueue, tmpBE)
-
-	if workers < 1 {
-		workers = 1
-	}
-
-	go func(alg string) {
-		defer close(checksumQueue)
-		tmpBE.Walk(`.`, func(p string, size int64, err error) error {
-			checksumQueue <- checksumJob{path: p, alg: alg, err: err}
-			return err
-		})
-	}(alg)
-	for ch := range checksumOutput {
-		if ch.err != nil {
-			return nil, ch.err
-		}
-		err := manifest.Append(filepath.Join(`data`, ch.path), ch.currentSum)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return nil, nil
-
 }
