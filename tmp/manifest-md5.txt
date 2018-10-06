@@ -1,0 +1,2 @@
+d41d8cd98f00b204e9800998ecf8427e  data/afile
+6137cde4893c59f76f005a8123d8e8e6  data/adir/bfile

@@ -20,7 +20,7 @@ var (
 	quiet     bool
 	path      string
 	outPath   string
-	tags      bago.TagFile
+	tags      bago.TagFlags
 )
 
 func init() {
@@ -50,6 +50,7 @@ func main() {
 	if create {
 		opts := bago.CreateBagOptions{
 			SrcDir:     path,
+			Info:       bago.TagFile(tags),
 			DstPath:    outPath,
 			Algorithms: []string{algorithm},
 			Workers:    processes,

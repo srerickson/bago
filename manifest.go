@@ -26,8 +26,8 @@ type ManifestEntry struct {
 	sum     string // checksum
 }
 
-var manifestLineRE = regexp.MustCompile(`^(\S+)\s+(\S.*)$`)
-
+// Append adds a new entry to the manifest. It returns an error if the
+// entry already exists. The path is encoded.
 func (man *Manifest) Append(path string, sum string) error {
 	if man.entries == nil {
 		man.entries = map[string]*ManifestEntry{}
@@ -40,13 +40,8 @@ func (man *Manifest) Append(path string, sum string) error {
 	return nil
 }
 
-// NewManifest returns an initialized manifest
-func NewManifest(alg string) *Manifest {
-	manifest := &Manifest{algorithm: alg}
-	return manifest
-}
-
 func (man *Manifest) parse(reader io.Reader) error {
+	manifestLineRE := regexp.MustCompile(`^(\S+)\s+(\S.*)$`)
 	lineNum := 0
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
@@ -68,28 +63,39 @@ func (man *Manifest) parse(reader io.Reader) error {
 	return nil
 }
 
-// ReadManifest reads and parses a manifest file
+func (man *Manifest) Write(writer io.Writer) {
+	for k, v := range man.entries {
+		fmt.Println(k)
+		fmt.Fprintf(writer, "%s %s\n", k, v.sum)
+	}
+}
 
-// NewManifestFromFilename returns checksum algorithm from manifest's filename
+// Filename returns filename for the manifest
+func (man *Manifest) Filename() string {
+	if man.kind == tagManifest {
+		return fmt.Sprintf("tagmanifest-%s.txt", man.algorithm)
+	}
+	return fmt.Sprintf("manifest-%s.txt", man.algorithm)
+}
+
+// NewManifestFromFilename returns new manifest based on filenme
 func newManifestFromFilename(filename string) (*Manifest, error) {
 	manifestFilenameRE := regexp.MustCompile(`^(tag)?manifest-(\w+).txt$`)
 	match := manifestFilenameRE.FindStringSubmatch(filename)
 	if len(match) < 3 {
 		return nil, fmt.Errorf("Badly formed manifest filename: %s", filename)
 	}
-	// Checksum algorithm
 	alg, err := NormalizeAlgName(match[2])
 	if err != nil {
 		return nil, err
 	}
-	manifest := &Manifest{algorithm: alg}
-	// Manifest type
+	var kind int
 	if match[1] == `tag` {
-		manifest.kind = tagManifest
+		kind = tagManifest
 	} else if match[1] == `` {
-		manifest.kind = payloadManifest
+		kind = payloadManifest
 	} else {
 		return nil, fmt.Errorf("Badly formed manifest filename: %s", filename)
 	}
-	return manifest, nil
+	return &Manifest{algorithm: alg, kind: kind}, nil
 }

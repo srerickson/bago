@@ -16,19 +16,29 @@ type TagFile struct {
 	tags   TagSet
 	labels []string
 }
+type TagFlags TagFile
 
 type bagitValues struct {
 	encoding string
 	version  [2]int
 }
 
-func (tf *TagFile) append(label string, value string) []string {
+// DefaultBagitTxt returns a new TagFile for bagit.txt
+func DefaultBagitTxt() *TagFile {
+	tagFile := &TagFile{}
+	tagFile.append(`BagIt-Version`, defaultVersion)
+	tagFile.append(`Tag-File-Character-Encoding`, `UTF-8`)
+	return tagFile
+}
+
+func (tf *TagFile) init() {
 	if tf.tags == nil {
 		tf.tags = TagSet{}
 	}
-	if tf.labels == nil {
-		tf.labels = []string{}
-	}
+}
+
+func (tf *TagFile) append(label string, value string) []string {
+	tf.init()
 	if _, ok := tf.tags[label]; !ok {
 		tf.tags[label] = []string{value}
 		tf.labels = append(tf.labels, label)
@@ -38,23 +48,28 @@ func (tf *TagFile) append(label string, value string) []string {
 	return tf.tags[label]
 }
 
-// Set is required by the Flag interface so we can collect tag values from the
-// command line. It is also used in parse()
-func (tf *TagFile) Set(val string) error {
-	labelLineRe := regexp.MustCompile(`^([^:\s][^:]*):(.*)`)
-	match := labelLineRe.FindStringSubmatch(val)
-	if len(match) < 3 {
-		return fmt.Errorf("tags should be in the form 'tag-name: value'")
+func (tf *TagFile) Set(label string, value string) {
+	tf.init()
+	if _, ok := tf.tags[label]; !ok {
+		tf.labels = append(tf.labels, label)
 	}
-	label := strings.Trim(match[1], ` `)
-	value := strings.Trim(match[2], ` `)
-	tf.append(label, value)
-	return nil
+	tf.tags[label] = []string{value}
+}
+
+func parseLine(line string) (ret [2]string, err error) {
+	lineRe := regexp.MustCompile(`^([^\s:][^:]*):(.*)`)
+	match := lineRe.FindStringSubmatch(line)
+	if len(match) < 3 {
+		err = fmt.Errorf("tags should be set as 'tag-name: value'")
+		return
+	}
+	ret[0] = strings.Trim(match[1], ` `)
+	ret[1] = strings.Trim(match[2], ` `)
+	return
 }
 
 func (tf *TagFile) parse(reader io.Reader) error {
-	tf.tags = nil
-	tf.labels = nil
+	tf.tags, tf.labels = nil, nil
 	lineNum := 0
 	emptyLineRE := regexp.MustCompile(`^\s*$`)
 	contLineRE := regexp.MustCompile(`^\s+\S+`)
@@ -74,11 +89,12 @@ func (tf *TagFile) parse(reader io.Reader) error {
 			valIndx := len(tf.tags[prevLabel]) - 1
 			tf.tags[prevLabel][valIndx] += " " + strings.Trim(line, ` `)
 		} else {
-			// must be start of a new label/value pair. handle with Set()
-			err := tf.Set(line)
+			// must be start of a new label/value pair.
+			keyVal, err := parseLine(line)
 			if err != nil {
 				return fmt.Errorf("Syntax error on line %d: %s", lineNum, err.Error())
 			}
+			tf.append(keyVal[0], keyVal[1])
 		}
 
 	}
@@ -124,14 +140,6 @@ func (tf *TagFile) bagitTxtValues() (ret bagitValues, err error) {
 	return ret, nil
 }
 
-// String returns string representation of the tag file following the
-// the BagIt specification. Lines are wrapped
-func (tf *TagFile) String() string {
-	var builder strings.Builder
-	tf.Write(&builder)
-	return builder.String()
-}
-
 func (tf *TagFile) Write(writer io.Writer) error {
 	for _, label := range tf.labels {
 		for _, val := range tf.tags[label] {
@@ -153,5 +161,25 @@ func (tf *TagFile) Write(writer io.Writer) error {
 			io.WriteString(writer, "\n")
 		}
 	}
+	return nil
+}
+
+// String returns string representation of the tag file following the
+// the BagIt specification. Lines are wrapped
+func (tf *TagFlags) String() string {
+	var builder strings.Builder
+	(*TagFile)(tf).Write(&builder)
+	return builder.String()
+}
+
+// Set is required by the Flag interface so we can collect tag values from the
+// command line. It is also used in parse()
+func (tf *TagFlags) Set(val string) error {
+	vals, err := parseLine(val)
+	if err != nil {
+		return err
+	}
+	_tf := (*TagFile)(tf)
+	_tf.append(vals[0], vals[1])
 	return nil
 }

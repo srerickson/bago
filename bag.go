@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	defaultVersion = "1.0" // BagIt version for new bags
+	defaultVersion = `0.97` // BagIt version for new bags
 	bagitTxt       = `bagit.txt`
 	bagInfo        = `bag-info.txt`
 	fetchTxt       = `fetch.txt`
