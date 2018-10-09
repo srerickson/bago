@@ -50,7 +50,7 @@ func NormalizeAlgName(alg string) (string, error) {
 	if algIsAvailabe(alg) {
 		return alg, nil
 	}
-	msg := fmt.Sprintf(`Uknown checksum algorithm: %s`, alg)
+	msg := fmt.Sprintf(`Unknown checksum algorithm: %s`, alg)
 	return ``, errors.New(msg)
 }
 

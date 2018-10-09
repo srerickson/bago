@@ -16,7 +16,6 @@ type TagFile struct {
 	tags   TagSet
 	labels []string
 }
-type TagFlags TagFile
 
 type bagitValues struct {
 	encoding string
@@ -26,8 +25,8 @@ type bagitValues struct {
 // DefaultBagitTxt returns a new TagFile for bagit.txt
 func DefaultBagitTxt() *TagFile {
 	tagFile := &TagFile{}
-	tagFile.append(`BagIt-Version`, defaultVersion)
-	tagFile.append(`Tag-File-Character-Encoding`, `UTF-8`)
+	tagFile.Append(`BagIt-Version`, defaultVersion)
+	tagFile.Append(`Tag-File-Character-Encoding`, `UTF-8`)
 	return tagFile
 }
 
@@ -37,7 +36,7 @@ func (tf *TagFile) init() {
 	}
 }
 
-func (tf *TagFile) append(label string, value string) []string {
+func (tf *TagFile) Append(label string, value string) []string {
 	tf.init()
 	if _, ok := tf.tags[label]; !ok {
 		tf.tags[label] = []string{value}
@@ -56,7 +55,7 @@ func (tf *TagFile) Set(label string, value string) {
 	tf.tags[label] = []string{value}
 }
 
-func parseLine(line string) (ret [2]string, err error) {
+func ParseTagFileLine(line string) (ret [2]string, err error) {
 	lineRe := regexp.MustCompile(`^([^\s:][^:]*):(.*)`)
 	match := lineRe.FindStringSubmatch(line)
 	if len(match) < 3 {
@@ -90,11 +89,11 @@ func (tf *TagFile) parse(reader io.Reader) error {
 			tf.tags[prevLabel][valIndx] += " " + strings.Trim(line, ` `)
 		} else {
 			// must be start of a new label/value pair.
-			keyVal, err := parseLine(line)
+			keyVal, err := ParseTagFileLine(line)
 			if err != nil {
 				return fmt.Errorf("Syntax error on line %d: %s", lineNum, err.Error())
 			}
-			tf.append(keyVal[0], keyVal[1])
+			tf.Append(keyVal[0], keyVal[1])
 		}
 
 	}
@@ -143,43 +142,30 @@ func (tf *TagFile) bagitTxtValues() (ret bagitValues, err error) {
 func (tf *TagFile) Write(writer io.Writer) error {
 	for _, label := range tf.labels {
 		for _, val := range tf.tags[label] {
-			fmt.Fprintf(writer, "%s:", label)
+			if _, err := fmt.Fprintf(writer, "%s:", label); err != nil {
+				return err
+			}
 			runesOnLine := utf8.RuneCountInString(label) + 1
 			scanner := bufio.NewScanner(strings.NewReader(val))
 			scanner.Split(bufio.ScanWords)
 			for scanner.Scan() {
 				word := scanner.Text()
 				len := utf8.RuneCountInString(word)
+				prefix := ``
 				if (runesOnLine + len) < 79 {
-					fmt.Fprintf(writer, " %s", word)
-					runesOnLine += (len + 1)
+					runesOnLine += (len + 1) // continue on same line
 				} else {
-					fmt.Fprintf(writer, "\n  %s", word)
-					runesOnLine = len + 2
+					prefix = "\n "        // new line: "\n  word"
+					runesOnLine = len + 2 //
+				}
+				if _, err := fmt.Fprintf(writer, "%s %s", prefix, word); err != nil {
+					return err
 				}
 			}
-			io.WriteString(writer, "\n")
+			if _, err := io.WriteString(writer, "\n"); err != nil {
+				return err
+			}
 		}
 	}
-	return nil
-}
-
-// String returns string representation of the tag file following the
-// the BagIt specification. Lines are wrapped
-func (tf *TagFlags) String() string {
-	var builder strings.Builder
-	(*TagFile)(tf).Write(&builder)
-	return builder.String()
-}
-
-// Set is required by the Flag interface so we can collect tag values from the
-// command line. It is also used in parse()
-func (tf *TagFlags) Set(val string) error {
-	vals, err := parseLine(val)
-	if err != nil {
-		return err
-	}
-	_tf := (*TagFile)(tf)
-	_tf.append(vals[0], vals[1])
 	return nil
 }

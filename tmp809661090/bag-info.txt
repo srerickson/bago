@@ -1,3 +1,0 @@
-This: That
-Thang: Thing
-Bagging-Date: today

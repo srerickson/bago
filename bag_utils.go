@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 type CreateBagOptions struct {
@@ -24,9 +25,7 @@ func OpenBag(path string) (*Bag, error) {
 
 // Create Bag Creates a new Bag with FSBag backend
 func CreateBag(opts *CreateBagOptions) (bag *Bag, err error) {
-
 	var buildDir string
-
 	if opts.Workers < 1 {
 		opts.Workers = 1
 	}
@@ -37,31 +36,20 @@ func CreateBag(opts *CreateBagOptions) (bag *Bag, err error) {
 			return
 		}
 	}
-	if opts.InPlace {
-		// Prepare in-place bag creation
+	if opts.InPlace { // Prepare in-place bag creation
 		opts.DstPath = opts.SrcDir
 		baseDir := filepath.Dir(opts.DstPath)
 		dirName := filepath.Base(opts.SrcDir)
 		if buildDir, err = ioutil.TempDir(baseDir, dirName); err != nil {
 			return
 		}
-		cleanup := func() {
-			if err != nil {
-				os.RemoveAll(buildDir)
-			}
-		}
-		defer cleanup()
-
-	} else {
-		// Prepare bag to new destination
+	} else { // Prepare bag to new destination
 		var dstInfo os.FileInfo
 		if dstInfo, err = os.Stat(opts.DstPath); err != nil {
-			// if opts.DstPath doesn't exist, try to create it
 			if err = os.Mkdir(opts.DstPath, 0755); err != nil {
 				return
 			}
 		}
-		// if DstPath exists, treat it as the parent of the new bag directory
 		if !dstInfo.IsDir() {
 			err = fmt.Errorf("expected a directory: %s", opts.DstPath)
 			return
@@ -72,69 +60,86 @@ func CreateBag(opts *CreateBagOptions) (bag *Bag, err error) {
 		}
 		buildDir = opts.DstPath
 	}
+	defer func() {
+		if err != nil {
+			os.RemoveAll(buildDir)
+		}
+	}()
 
-	// TMP Backend is just used to create the initial payload
-	tmpBE := &FSBag{path: opts.SrcDir}
-	// newBag := &Bag{version: [2]int{1, 0}, encoding: `UTF-8`}
-	manifests := map[string]*Manifest{}
+	// the new bag
+	bag = &Bag{
+		Backend: &FSBag{path: buildDir},
+		Info:    opts.Info,
+	}
+	bag.manifests, err = ManfifestsForDir(opts.SrcDir, opts.Algorithms, opts.Workers, `data/`)
+	if err != nil {
+		return nil, err
+	}
+	if err = bag.WritePayloadManifests(); err != nil {
+		return nil, err
+	}
+	if err = bag.WriteBagitTxt(); err != nil {
+		return nil, err
+	}
+	bag.Info.Set(`Bag-Date`, time.Now().Format("2006-01-02"))
+	bag.Info.Set(`Long-Text-Entry`, `This is very very long text that should trigger the line wrap functions. Hope it works!`)
+	if err = bag.WriteBagInfo(); err != nil {
+		return nil, err
+	}
+	bag.tagManifests, err = ManfifestsForDir(buildDir, opts.Algorithms, opts.Workers, ``)
+	if err != nil {
+		return nil, err
+	}
+	if err = bag.WriteTagManifests(); err != nil {
+		return nil, err
+	}
+	return bag, nil
+}
 
+// Manifests for Dir returns a slice of manifests describing contents of a
+// directory.
+func ManfifestsForDir(dPath string, algs []string, numWorkers int, prefix string) ([]*Manifest, error) {
+	if len(algs) == 0 {
+		return nil, fmt.Errorf("Can't make manifest without an algorithm")
+	}
+	for i := range algs {
+		var err error
+		if algs[i], err = NormalizeAlgName(algs[i]); err != nil {
+			return nil, err
+		}
+	}
+	mans := map[string]*Manifest{}
+	dir := &FSBag{path: dPath}
 	checksumQueue := make(chan checksumJob)
-	checksumOutput := checksumWorkers(opts.Workers, checksumQueue, tmpBE)
-
-	go func(algs []string) {
+	checksumOutput := checksumWorkers(numWorkers, checksumQueue, dir)
+	go func() {
 		defer close(checksumQueue)
-		tmpBE.Walk(`.`, func(p string, size int64, err error) error {
-			for _, alg := range opts.Algorithms {
+		walkErr := dir.Walk(`.`, func(p string, size int64, err error) error {
+			for _, alg := range algs {
 				checksumQueue <- checksumJob{path: p, alg: alg, err: err}
 			}
-			fmt.Println(p)
 			return err
 		})
-	}(opts.Algorithms)
-
-	for ch := range checksumOutput {
-		if ch.err != nil {
-			return nil, ch.err
+		if walkErr != nil {
+			checksumQueue <- checksumJob{path: dPath, alg: ``, err: walkErr}
 		}
-		manifest, ok := manifests[ch.alg]
+	}()
+	for check := range checksumOutput {
+		if check.err != nil {
+			return nil, check.err
+		}
+		_, ok := mans[check.alg]
 		if !ok {
-			manifests[ch.alg] = &Manifest{algorithm: ch.alg}
-			manifest = manifests[ch.alg]
+			mans[check.alg] = &Manifest{algorithm: check.alg}
 		}
-		err = manifest.Append(filepath.Join(`data`, ch.path), ch.currentSum)
+		err := mans[check.alg].Append(prefix+check.path, check.currentSum)
 		if err != nil {
 			return nil, err
 		}
 	}
-
-	//Write payload manifests
-	var file *os.File
-	for _, manifest := range manifests {
-		file, err = os.Create(filepath.Join(buildDir, manifest.Filename()))
-		if err != nil {
-			return nil, err
-		}
-		manifest.Write(file)
-		file.Close()
+	ret := make([]*Manifest, len(algs))
+	for i, alg := range algs {
+		ret[i] = mans[alg]
 	}
-
-	//bagit.txt
-	if file, err = os.Create(filepath.Join(buildDir, `bagit.txt`)); err != nil {
-		return nil, err
-	}
-	DefaultBagitTxt().Write(file)
-	file.Close()
-
-	//bag-info.txt
-	opts.Info.Set("Bagging-Date", `today`)
-	if file, err = os.Create(filepath.Join(buildDir, `bag-info.txt`)); err != nil {
-		return nil, err
-	}
-	opts.Info.Write(file)
-	file.Close()
-
-	//mv or cp?
-
-	return nil, nil
-
+	return ret, nil
 }

@@ -20,7 +20,7 @@ var (
 	quiet     bool
 	path      string
 	outPath   string
-	tags      bago.TagFlags
+	tags      TagFlags
 )
 
 func init() {

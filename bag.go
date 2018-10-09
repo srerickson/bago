@@ -300,3 +300,48 @@ func (bag *Bag) versionOk() bool {
 	}
 	return true
 }
+
+func (bag *Bag) WritePayloadManifests() error {
+	for _, man := range bag.manifests {
+		if err := bag.write(man.Filename(), man); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (bag *Bag) WriteTagManifests() error {
+	for _, man := range bag.tagManifests {
+		man.kind = tagManifest
+		if err := bag.write(man.Filename(), man); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (bag *Bag) WriteBagitTxt() error {
+	return bag.write(bagitTxt, DefaultBagitTxt())
+}
+
+func (bag *Bag) WriteBagInfo() error {
+	return bag.write(bagInfo, &bag.Info)
+}
+
+type bagComponent interface {
+	Write(io.Writer) error
+}
+
+func (bag *Bag) write(path string, writer bagComponent) (err error) {
+	var file io.WriteCloser
+	if file, err = bag.Backend.NewWriter(path); err != nil {
+		return err
+	}
+	if err = writer.Write(file); err != nil {
+		return err
+	}
+	if err = file.Close(); err != nil {
+		return err
+	}
+	return nil
+}

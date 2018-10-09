@@ -10,8 +10,8 @@ import (
 )
 
 const (
+	payloadManifest = 0 // default
 	tagManifest     = 1
-	payloadManifest = 2
 )
 
 //Manifest represents a payload manifest file
@@ -63,11 +63,13 @@ func (man *Manifest) parse(reader io.Reader) error {
 	return nil
 }
 
-func (man *Manifest) Write(writer io.Writer) {
+func (man *Manifest) Write(writer io.Writer) error {
 	for k, v := range man.entries {
-		fmt.Println(k)
-		fmt.Fprintf(writer, "%s %s\n", k, v.sum)
+		if _, err := fmt.Fprintf(writer, "%s %s\n", v.sum, k); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // Filename returns filename for the manifest
