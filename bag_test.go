@@ -17,7 +17,7 @@ type TestVersionGroup struct {
 
 func testDataPath() string {
 	_, fPath, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(fPath), `test-data`)
+	return filepath.Join(filepath.Dir(fPath), `test/bags`)
 }
 
 func testBags() TestBagGroup {

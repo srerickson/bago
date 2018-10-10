@@ -2,6 +2,7 @@ package bago
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -59,6 +60,9 @@ func (man *Manifest) parse(reader io.Reader) error {
 		if err != nil {
 			return fmt.Errorf("line %d: %s", lineNum, err.Error())
 		}
+	}
+	if lineNum == 0 {
+		return errors.New("empty manifest")
 	}
 	return nil
 }

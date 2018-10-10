@@ -26,6 +26,7 @@ func newDecodeReader(reader io.Reader, enc string) (io.Reader, error) {
 	return nil, fmt.Errorf("Unrecognized encoding: %s", enc)
 }
 
+// EncodePath encodes a path for inclusion in a manifest file
 func encodePath(s string) string {
 	s = norm.NFC.String(s) // Not sure this should be here
 	s = strings.Replace(s, `%`, `%25`, -1)
