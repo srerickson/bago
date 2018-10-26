@@ -12,7 +12,6 @@ import (
 )
 
 var (
-	serve     string
 	validate  bool
 	create    bool
 	processes int
@@ -25,7 +24,6 @@ var (
 )
 
 func init() {
-	flag.StringVar(&serve, `serve`, ``, `start server`)
 	flag.BoolVar(&create, `create`, false, `create bag`)
 	flag.BoolVar(&validate, `validate`, false, `validate bag`)
 	flag.StringVar(&algorithm, `algorithm`, `sha512`, `checksum algorithm to use`)
@@ -44,18 +42,11 @@ func handleErr(err error) {
 
 func main() {
 	flag.Parse()
-
-	if serve != `` {
-		server(serve)
-		os.Exit(0)
-	}
-
 	path = flag.Arg(0)
 	if path == `` {
 		err := errors.New(`no path given`)
 		handleErr(err)
 	}
-
 	if create {
 		opts := bago.CreateBagOptions{
 			SrcDir:     path,
