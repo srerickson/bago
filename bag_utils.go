@@ -93,6 +93,14 @@ func CreateBag(opts *CreateBagOptions) (bag *Bag, err error) {
 	if err = bag.WriteTagManifests(); err != nil {
 		return nil, err
 	}
+	if err = os.Rename(opts.SrcDir, filepath.Join(buildDir, `data`)); err != nil {
+		return nil, err
+	}
+	if opts.InPlace {
+		if err = os.Rename(buildDir, opts.DstPath); err != nil {
+			return nil, err
+		}
+	}
 	return bag, nil
 }
 
@@ -111,12 +119,17 @@ func ManfifestsForDir(dPath string, algs []string, numWorkers int, prefix string
 	mans := map[string]*Manifest{}
 	tmpBag := &FSBag{path: dPath}
 	checksumQueue := make(chan checksumJob)
-	checksumOutput := checksumPool(numWorkers, checksumQueue, tmpBag.Checksum)
+	checksumOutput := checksumPool(numWorkers, checksumQueue)
 	go func() {
 		defer close(checksumQueue)
-		walkErr := tmpBag.Walk(`.`, func(p string, size int64, err error) error {
+		walkErr := tmpBag.Walk(`.`, func(p string, s int64, err error) error {
 			for _, alg := range algs {
-				checksumQueue <- checksumJob{path: p, alg: alg, err: err}
+				checksumQueue <- checksumJob{
+					path:    p,
+					alg:     alg,
+					err:     err,
+					checker: tmpBag.Checksum,
+				}
 			}
 			return err
 		})

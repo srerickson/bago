@@ -23,15 +23,16 @@ const (
 
 var availableAlgs = [...]string{SHA512, SHA256, SHA224, SHA1, MD5}
 
+type checksumer func(string, string) (string, error)
+
 type checksumJob struct {
 	path        string
 	alg         string
+	checker     checksumer
 	expectedSum string
 	currentSum  string
 	err         error
 }
-
-type checksumer func(string, string) (string, error)
 
 func algIsAvailabe(alg string) bool {
 	for _, a := range availableAlgs {
@@ -73,7 +74,7 @@ func NewHash(alg string) (hash.Hash, error) {
 	return h, nil
 }
 
-func checksumPool(n int, jobs <-chan checksumJob, checker checksumer) <-chan checksumJob {
+func checksumPool(n int, jobs <-chan checksumJob) <-chan checksumJob {
 	results := make(chan checksumJob)
 	var wg sync.WaitGroup
 	for i := 0; i < n; i++ {
@@ -85,7 +86,7 @@ func checksumPool(n int, jobs <-chan checksumJob, checker checksumer) <-chan che
 					results <- job
 					break
 				}
-				job.currentSum, job.err = checker(job.path, job.alg)
+				job.currentSum, job.err = job.checker(job.path, job.alg)
 				results <- job
 				if job.err != nil {
 					break
@@ -102,7 +103,7 @@ func checksumPool(n int, jobs <-chan checksumJob, checker checksumer) <-chan che
 
 func (b *Bag) ValidateManifests(workers int) (err error) {
 	inQ := make(chan checksumJob)
-	outQ := checksumPool(workers, inQ, b.Backend.Checksum)
+	outQ := checksumPool(workers, inQ)
 	go func() {
 		defer close(inQ)
 		for _, m := range append(b.manifests, b.tagManifests...) {
@@ -111,6 +112,7 @@ func (b *Bag) ValidateManifests(workers int) (err error) {
 					path:        decodePath(path),
 					alg:         m.algorithm,
 					expectedSum: entry.sum,
+					checker:     b.Backend.Checksum,
 				}
 			}
 		}
