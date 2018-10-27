@@ -67,8 +67,8 @@ func main() {
 			handleErr(err)
 			os.Exit(1)
 		}
-		valid := bag.IsValid(handleErr)
-		if !valid {
+		if _, err := bag.IsValid(); err != nil {
+			handleErr(err)
 			os.Exit(1)
 		}
 		// fmt.Println(bag.Info.String())

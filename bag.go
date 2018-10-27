@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 )
 
 const (
@@ -33,6 +34,7 @@ type PayloadEntry struct {
 	size    int64
 }
 
+// TODO bad function name
 func (bag *Bag) Hydrate() error {
 	if bag.Backend == nil {
 		return errors.New("Cannot hydrate a bag with no Backend\n")
@@ -46,7 +48,7 @@ func (bag *Bag) Hydrate() error {
 	if err != nil {
 		return err
 	}
-	err = bag.initPayload()
+	err = bag.readPayload()
 	if err != nil {
 		return err
 	}
@@ -59,88 +61,48 @@ func (bag *Bag) Hydrate() error {
 
 // IsComplete returns whether bag satisfies bag completeness conditions.
 // See: https://tools.ietf.org/html/draft-kunze-bagit-16#section-3
-func (b *Bag) IsComplete(errCb func(error)) bool {
-	complete := true
+func (b *Bag) IsComplete() (bool, error) {
 	if b.encoding == `` || !b.versionOk() {
-		complete = false
-		if errCb != nil {
-			errCb(fmt.Errorf("Missing required fields in %s", bagitTxt))
-		}
+		return false, fmt.Errorf("Missing required fields in %s", bagitTxt)
 	}
 	if b.payload == nil {
-		if errCb != nil {
-			errCb(fmt.Errorf("bag has no payload"))
-		}
-		return false
+		return false, fmt.Errorf("bag has no payload")
 	}
 	if len(b.manifests) == 0 {
-		if errCb != nil {
-			errCb(fmt.Errorf("bag has no manifest"))
-		}
-		return false
+		return false, fmt.Errorf("bag has no manifest")
 	}
-	missingFromPayload := b.missingFromPayload()
-	if len(missingFromPayload) > 0 {
-		complete = false
-		if errCb != nil {
-			for _, m := range missingFromPayload {
-				errCb(fmt.Errorf("Missing from payload: %s", m))
-			}
-		}
+	missing := b.notInPayload()
+	if len(missing) > 0 {
+		msg := "Manifest files missing from payload:"
+		return false, fmt.Errorf("%s %s", msg, strings.Join(missing, `\n -`))
 	}
-	missingFromManifests := b.missingFromManifests(0)
-	if len(missingFromManifests) > 0 {
-		complete = false
-		if errCb != nil {
-			for _, m := range missingFromManifests {
-				errCb(fmt.Errorf("Missing from manifests: %s", m))
-			}
-		}
+	missing = b.notInManifests(0)
+	if len(missing) > 0 {
+		msg := "Payload files missing from manifest:"
+		return false, fmt.Errorf("%s %s", msg, strings.Join(missing, `\n -`))
 	}
-	missingTags := b.missingTagFiles()
-	if len(missingTags) > 0 {
-		complete = false
-		if errCb != nil {
-			for _, m := range missingTags {
-				errCb(fmt.Errorf("Missing tag file: %s", m))
-			}
-		}
+	missing = b.missingTagFiles()
+	if len(missing) > 0 {
+		msg := "Tagfiles missing from tag manifests:"
+		return false, fmt.Errorf("%s %s", msg, strings.Join(missing, `\n -`))
 	}
-	return complete
+	return true, nil
 }
 
 // IsValid returns whether the bag at path is valid
 // A valid bag is complete and checksums listed in all manifests are correct.
-func (b *Bag) IsValid(errCb func(error)) bool {
-	valid := b.IsComplete(errCb)
-	if !valid {
-		return false
+func (b *Bag) IsValidConcurrent(workers int) (bool, error) {
+	if _, err := b.IsComplete(); err != nil {
+		return false, fmt.Errorf(`Bag is not complete: %s`, err.Error())
 	}
-	// queue up checksum jobs
-	jobInput := make(chan checksumJob)
-	jobOutput := checksumWorkers(2, jobInput, b.Backend)
-	go func() {
-		defer close(jobInput)
-		for _, m := range append(b.manifests, b.tagManifests...) {
-			for path, entry := range m.entries {
-				// put checksum jobs for each manifest entries on the worker queue
-				jobInput <- checksumJob{
-					path:        decodePath(path),
-					alg:         m.algorithm,
-					expectedSum: entry.sum,
-				}
-			}
-		}
-	}()
-	for job := range jobOutput {
-		if job.expectedSum != job.currentSum {
-			valid = false
-			if errCb != nil {
-				errCb(fmt.Errorf("Checksum failed for: %s", job.path))
-			}
-		}
+	if err := b.ValidateManifests(workers); err != nil {
+		return false, err
 	}
-	return valid
+	return true, nil
+}
+
+func (b *Bag) IsValid() (bool, error) {
+	return b.IsValidConcurrent(1)
 }
 
 // missingTagFiles scans tag manifest entries and reports missing tag files
@@ -157,8 +119,8 @@ func (bag *Bag) missingTagFiles() []string {
 	return missing
 }
 
-// missingFromPayload scans manifests for files not present in the payload.
-func (b *Bag) missingFromPayload() []string {
+// notInPayload scans manifests for files not present in the payload.
+func (b *Bag) notInPayload() []string {
 	missing := []string{}
 	for _, m := range b.manifests {
 		for mPath := range m.entries {
@@ -170,9 +132,9 @@ func (b *Bag) missingFromPayload() []string {
 	return missing
 }
 
-// missingFromManifests scans payload for files not accounted for in manifests
+// notInManifests scans payload for files not accounted for in manifests
 // thesh is the min number of manifests that a file can be missing from
-func (b *Bag) missingFromManifests(thresh int) []string {
+func (b *Bag) notInManifests(thresh int) []string {
 	counts := make(map[string]int)
 	missing := []string{}
 	for pPath := range b.payload {
@@ -187,9 +149,9 @@ func (b *Bag) missingFromManifests(thresh int) []string {
 	return missing
 }
 
-// walk the payload directory (`data`) tree and populate bag.payload with the
-// files found there. File paths are noramilzed with encodePath
-func (bag *Bag) initPayload() error {
+// readPayload walks the payload directory (`data`) and populates bag.payload. F
+// File paths are noramilzed with encodePath
+func (bag *Bag) readPayload() error {
 	bag.payload = Payload{}
 	return bag.Backend.Walk(dataDir, func(path string, size int64, err error) error {
 		if err == nil {
@@ -270,7 +232,7 @@ type parser interface {
 // parse is a helper function for parsing compontent files in a bag.
 // It wraps the logic opening, decoding, and parsing the bag.
 func (bag *Bag) parse(parser parser, name string, encoding string) error {
-	reader, err := bag.Backend.NewReader(name)
+	reader, err := bag.Backend.Open(name)
 	defer reader.Close()
 	if err != nil {
 		return err
@@ -334,7 +296,7 @@ type bagComponent interface {
 
 func (bag *Bag) write(path string, writer bagComponent) (err error) {
 	var file io.WriteCloser
-	if file, err = bag.Backend.NewWriter(path); err != nil {
+	if file, err = bag.Backend.Create(path); err != nil {
 		return err
 	}
 	if err = writer.Write(file); err != nil {

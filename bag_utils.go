@@ -109,12 +109,12 @@ func ManfifestsForDir(dPath string, algs []string, numWorkers int, prefix string
 		}
 	}
 	mans := map[string]*Manifest{}
-	dir := &FSBag{path: dPath}
+	tmpBag := &FSBag{path: dPath}
 	checksumQueue := make(chan checksumJob)
-	checksumOutput := checksumWorkers(numWorkers, checksumQueue, dir)
+	checksumOutput := checksumPool(numWorkers, checksumQueue, tmpBag.Checksum)
 	go func() {
 		defer close(checksumQueue)
-		walkErr := dir.Walk(`.`, func(p string, size int64, err error) error {
+		walkErr := tmpBag.Walk(`.`, func(p string, size int64, err error) error {
 			for _, alg := range algs {
 				checksumQueue <- checksumJob{path: p, alg: alg, err: err}
 			}

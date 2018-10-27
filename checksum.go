@@ -31,9 +31,7 @@ type checksumJob struct {
 	err         error
 }
 
-type checksumer interface {
-	Checksum(string, string) (string, error)
-}
+type checksumer func(string, string) (string, error)
 
 func algIsAvailabe(alg string) bool {
 	for _, a := range availableAlgs {
@@ -75,10 +73,10 @@ func NewHash(alg string) (hash.Hash, error) {
 	return h, nil
 }
 
-func checksumWorkers(workers int, jobs <-chan checksumJob, checker checksumer) <-chan checksumJob {
+func checksumPool(n int, jobs <-chan checksumJob, checker checksumer) <-chan checksumJob {
 	results := make(chan checksumJob)
 	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
+	for i := 0; i < n; i++ {
 		wg.Add(1) //checksum workers
 		go func() {
 			defer wg.Done()
@@ -87,7 +85,7 @@ func checksumWorkers(workers int, jobs <-chan checksumJob, checker checksumer) <
 					results <- job
 					break
 				}
-				job.currentSum, job.err = checker.Checksum(job.path, job.alg)
+				job.currentSum, job.err = checker(job.path, job.alg)
 				results <- job
 				if job.err != nil {
 					break
@@ -100,4 +98,30 @@ func checksumWorkers(workers int, jobs <-chan checksumJob, checker checksumer) <
 		close(results)
 	}()
 	return results
+}
+
+func (b *Bag) ValidateManifests(workers int) (err error) {
+	inQ := make(chan checksumJob)
+	outQ := checksumPool(workers, inQ, b.Backend.Checksum)
+	go func() {
+		defer close(inQ)
+		for _, m := range append(b.manifests, b.tagManifests...) {
+			for path, entry := range m.entries {
+				inQ <- checksumJob{
+					path:        decodePath(path),
+					alg:         m.algorithm,
+					expectedSum: entry.sum,
+				}
+			}
+		}
+	}()
+	for job := range outQ {
+		if job.expectedSum != job.currentSum {
+			if err == nil {
+				err = errors.New("checksum failed for: ")
+			}
+			err = fmt.Errorf("%s '%s'", err.Error(), job.path)
+		}
+	}
+	return err
 }

@@ -59,29 +59,19 @@ func TestOpenBag(t *testing.T) {
 }
 
 func TestIsValid(t *testing.T) {
-	wasCalled := false
-	callBack := func(e error) {
-		wasCalled = true
-	}
 	for version, group := range testBags() {
 		for name, path := range group.valid {
 			bag, _ := OpenBag(path)
-			wasCalled = false
-			isValid := bag.IsValid(callBack)
+			isValid, _ := bag.IsValid()
 			if !isValid {
 				t.Error("Valid test bag should be valid:", version, name)
-			} else if wasCalled {
-				t.Error("callback was called during IsValid, but shouldn't have")
 			}
 		}
 		for name, path := range group.invalid {
 			bag, _ := OpenBag(path)
-			wasCalled = false
-			isValid := bag.IsValid(callBack)
+			isValid, _ := bag.IsValid()
 			if isValid {
 				t.Error("Invalid test bag should be invalid:", version, name)
-			} else if !wasCalled {
-				t.Error("callback was not called during IsValid, but should have been")
 			}
 		}
 	}
