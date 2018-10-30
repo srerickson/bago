@@ -5,9 +5,11 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash"
+	"io"
 	"strings"
 	"sync"
 )
@@ -23,15 +25,84 @@ const (
 
 var availableAlgs = [...]string{SHA512, SHA256, SHA224, SHA1, MD5}
 
-type checksumer func(string, string) (string, error)
+type Checksumer struct {
+	workers int
+	jobs    chan checksumJob
+	results chan checksumJob
+	fs      Backend
+}
 
 type checksumJob struct {
 	path        string
 	alg         string
-	checker     checksumer
 	expectedSum string
-	currentSum  string
+	actualSum   string
 	err         error
+}
+
+func NewChecksumer(workers int, backend Backend) *Checksumer {
+	c := &Checksumer{workers: workers, fs: backend}
+	c.jobs = make(chan checksumJob)
+	c.results = make(chan checksumJob)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1) //checksum workers
+		go func() {
+			defer wg.Done()
+			for job := range c.jobs {
+				if job.err != nil {
+					c.results <- job
+					break
+				}
+				job.actualSum, job.err = c.Check(job)
+				c.results <- job
+				if job.err != nil {
+					break
+				}
+			}
+		}()
+	}
+	go func() {
+		wg.Wait() // for workers to complete
+		close(c.results)
+	}()
+	return c
+}
+
+func (ch *Checksumer) Check(j checksumJob) (string, error) {
+	h, err := NewHash(j.alg)
+	if err != nil {
+		return "", err
+	}
+	file, err := ch.fs.Open(j.path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	_, err = io.Copy(h, file)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func (ch *Checksumer) Push(p string, a string, s string) {
+	ch.jobs <- checksumJob{
+		path:        p,
+		alg:         a,
+		expectedSum: s,
+	}
+}
+
+func (ch *Checksumer) PushFunc(f func(func(string, string, string))) {
+	go func() {
+		defer close(ch.jobs)
+		f(ch.Push)
+	}()
+}
+
+func (ch *Checksumer) Results() <-chan checksumJob {
+	return ch.results
 }
 
 func algIsAvailabe(alg string) bool {
@@ -72,58 +143,4 @@ func NewHash(alg string) (hash.Hash, error) {
 		return nil, errors.New(msg)
 	}
 	return h, nil
-}
-
-func checksumPool(n int, jobs <-chan checksumJob) <-chan checksumJob {
-	results := make(chan checksumJob)
-	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
-		wg.Add(1) //checksum workers
-		go func() {
-			defer wg.Done()
-			for job := range jobs {
-				if job.err != nil {
-					results <- job
-					break
-				}
-				job.currentSum, job.err = job.checker(job.path, job.alg)
-				results <- job
-				if job.err != nil {
-					break
-				}
-			}
-		}()
-	}
-	go func() {
-		wg.Wait() // for workers to complete
-		close(results)
-	}()
-	return results
-}
-
-func (b *Bag) ValidateManifests(workers int) (err error) {
-	inQ := make(chan checksumJob)
-	outQ := checksumPool(workers, inQ)
-	go func() {
-		defer close(inQ)
-		for _, m := range append(b.manifests, b.tagManifests...) {
-			for path, entry := range m.entries {
-				inQ <- checksumJob{
-					path:        decodePath(path),
-					alg:         m.algorithm,
-					expectedSum: entry.sum,
-					checker:     b.Backend.Checksum,
-				}
-			}
-		}
-	}()
-	for job := range outQ {
-		if job.expectedSum != job.currentSum {
-			if err == nil {
-				err = errors.New("checksum failed for: ")
-			}
-			err = fmt.Errorf("%s '%s'", err.Error(), job.path)
-		}
-	}
-	return err
 }

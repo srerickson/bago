@@ -62,7 +62,7 @@ func TestIsValid(t *testing.T) {
 	for version, group := range testBags() {
 		for name, path := range group.valid {
 			bag, _ := OpenBag(path)
-			isValid, _ := bag.IsValid()
+			isValid, _ := bag.IsValidConcurrent(20)
 			if !isValid {
 				t.Error("Valid test bag should be valid:", version, name)
 			}

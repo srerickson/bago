@@ -116,28 +116,22 @@ func ManfifestsForDir(dPath string, algs []string, numWorkers int, prefix string
 			return nil, err
 		}
 	}
+	fs := &FSBag{path: dPath}
 	mans := map[string]*Manifest{}
-	tmpBag := &FSBag{path: dPath}
-	checksumQueue := make(chan checksumJob)
-	checksumOutput := checksumPool(numWorkers, checksumQueue)
+	sumer := NewChecksumer(numWorkers, fs)
 	go func() {
-		defer close(checksumQueue)
-		walkErr := tmpBag.Walk(`.`, func(p string, s int64, err error) error {
+		defer close(sumer.jobs)
+		walkErr := fs.Walk(`.`, func(p string, s int64, err error) error {
 			for _, alg := range algs {
-				checksumQueue <- checksumJob{
-					path:    p,
-					alg:     alg,
-					err:     err,
-					checker: tmpBag.Checksum,
-				}
+				sumer.Push(p, alg, ``)
 			}
 			return err
 		})
 		if walkErr != nil {
-			checksumQueue <- checksumJob{path: dPath, alg: ``, err: walkErr}
+			sumer.jobs <- checksumJob{path: dPath, alg: ``, err: walkErr}
 		}
 	}()
-	for check := range checksumOutput {
+	for check := range sumer.Results() {
 		if check.err != nil {
 			return nil, check.err
 		}
@@ -145,7 +139,7 @@ func ManfifestsForDir(dPath string, algs []string, numWorkers int, prefix string
 		if !ok {
 			mans[check.alg] = &Manifest{algorithm: check.alg}
 		}
-		err := mans[check.alg].Append(prefix+check.path, check.currentSum)
+		err := mans[check.alg].Append(prefix+check.path, check.actualSum)
 		if err != nil {
 			return nil, err
 		}

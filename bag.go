@@ -105,6 +105,26 @@ func (b *Bag) IsValid() (bool, error) {
 	return b.IsValidConcurrent(1)
 }
 
+func (b *Bag) ValidateManifests(workers int) (err error) {
+	checker := NewChecksumer(workers, b.Backend)
+	checker.PushFunc(func(push func(string, string, string)) {
+		for _, m := range append(b.manifests, b.tagManifests...) {
+			for path, entry := range m.entries {
+				push(decodePath(path), m.algorithm, entry.sum)
+			}
+		}
+	})
+	for job := range checker.Results() {
+		if job.expectedSum != job.actualSum {
+			if err == nil {
+				err = errors.New("checksum failed for: ")
+			}
+			err = fmt.Errorf("%s '%s'", err.Error(), job.path)
+		}
+	}
+	return err
+}
+
 // missingTagFiles scans tag manifest entries and reports missing tag files
 func (bag *Bag) missingTagFiles() []string {
 	missing := []string{}

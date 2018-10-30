@@ -1,7 +1,6 @@
 package bago
 
 import (
-	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -19,7 +18,7 @@ type Backend interface {
 	Create(string) (io.WriteCloser, error)
 	AllManifests() []string
 	Walk(string, func(string, int64, error) error) error
-	Checksum(path string, alg string) (string, error)
+	// Checksum(path string, alg string) (string, error)
 }
 
 // FSBag Implements Backend for the filesystem
@@ -70,19 +69,19 @@ func (be *FSBag) AllManifests() []string {
 	return manFiles
 }
 
-func (be *FSBag) Checksum(path string, alg string) (string, error) {
-	h, err := NewHash(alg)
-	if err != nil {
-		return "", err
-	}
-	file, err := be.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-	_, err = io.Copy(h, file)
-	if err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
-}
+// func (be *FSBag) Checksum(path string, alg string) (string, error) {
+// 	h, err := NewHash(alg)
+// 	if err != nil {
+// 		return "", err
+// 	}
+// 	file, err := be.Open(path)
+// 	if err != nil {
+// 		return "", err
+// 	}
+// 	defer file.Close()
+// 	_, err = io.Copy(h, file)
+// 	if err != nil {
+// 		return "", err
+// 	}
+// 	return hex.EncodeToString(h.Sum(nil)), nil
+// }
