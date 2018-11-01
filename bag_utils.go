@@ -119,22 +119,18 @@ func ManfifestsForDir(dPath string, algs []string, numWorkers int, prefix string
 	fs := &FSBag{path: dPath}
 	mans := map[string]*Manifest{}
 	sumer := NewChecksumer(numWorkers, fs)
-	go func() {
-		defer close(sumer.jobs)
-		walkErr := fs.Walk(`.`, func(p string, s int64, err error) error {
+	sumer.PushFunc(func(push JobPushFunc) error {
+		return fs.Walk(`.`, func(p string, s int64, err error) error {
+			if err != nil {
+				return err
+			}
 			for _, alg := range algs {
 				sumer.Push(p, alg, ``)
 			}
-			return err
+			return nil
 		})
-		if walkErr != nil {
-			sumer.jobs <- checksumJob{path: dPath, alg: ``, err: walkErr}
-		}
-	}()
+	})
 	for check := range sumer.Results() {
-		if check.err != nil {
-			return nil, check.err
-		}
 		_, ok := mans[check.alg]
 		if !ok {
 			mans[check.alg] = &Manifest{algorithm: check.alg}

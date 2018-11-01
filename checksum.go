@@ -29,36 +29,49 @@ type Checksumer struct {
 	workers int
 	jobs    chan checksumJob
 	results chan checksumJob
+	cancel  chan error
+	err     error // error that caused cancel
 	fs      Backend
 }
+
+type JobPushFunc func(string, string, string)
 
 type checksumJob struct {
 	path        string
 	alg         string
 	expectedSum string
 	actualSum   string
-	err         error
+	// err         error
 }
 
 func NewChecksumer(workers int, backend Backend) *Checksumer {
 	c := &Checksumer{workers: workers, fs: backend}
 	c.jobs = make(chan checksumJob)
 	c.results = make(chan checksumJob)
+	c.cancel = make(chan error)
+
+	go func() {
+		for {
+			select {
+			case c.err = <-c.cancel:
+				for _ = range c.jobs {
+				}
+			}
+		}
+		close(c.cancel)
+	}()
 	var wg sync.WaitGroup
 	for i := 0; i < workers; i++ {
 		wg.Add(1) //checksum workers
 		go func() {
 			defer wg.Done()
 			for job := range c.jobs {
-				if job.err != nil {
-					c.results <- job
+				var err error
+				if job.actualSum, err = c.Check(job); err != nil {
+					c.cancel <- err
 					break
 				}
-				job.actualSum, job.err = c.Check(job)
 				c.results <- job
-				if job.err != nil {
-					break
-				}
 			}
 		}()
 	}
@@ -94,10 +107,12 @@ func (ch *Checksumer) Push(p string, a string, s string) {
 	}
 }
 
-func (ch *Checksumer) PushFunc(f func(func(string, string, string))) {
+func (ch *Checksumer) PushFunc(f func(JobPushFunc) error) {
 	go func() {
 		defer close(ch.jobs)
-		f(ch.Push)
+		if err := f(ch.Push); err != nil {
+			ch.cancel <- err
+		}
 	}()
 }
 
