@@ -67,10 +67,11 @@ func main() {
 			handleErr(err)
 			os.Exit(1)
 		}
-		if _, err := bag.IsValid(); err != nil {
+		if _, err := bag.IsValidConcurrent(processes); err != nil {
 			handleErr(err)
 			os.Exit(1)
 		}
+		fmt.Print("bag is valid\n")
 		// fmt.Println(bag.Info.String())
 	} else if profile {
 		profile := bago.Profile{}

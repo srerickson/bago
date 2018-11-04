@@ -118,24 +118,20 @@ func ManfifestsForDir(dPath string, algs []string, numWorkers int, prefix string
 	}
 	fs := &FSBag{path: dPath}
 	mans := map[string]*Manifest{}
-	sumer := NewChecksumer(numWorkers, fs)
-	sumer.PushFunc(func(push JobPushFunc) error {
+	sumer := NewChecksumer(numWorkers, fs, func(push ChecksumPusher) error {
 		return fs.Walk(`.`, func(p string, s int64, err error) error {
-			if err != nil {
-				return err
-			}
 			for _, alg := range algs {
-				sumer.Push(p, alg, ``)
+				push(ChecksumJob{Path: p, Alg: alg, Err: err})
 			}
-			return nil
+			return err
 		})
 	})
 	for check := range sumer.Results() {
-		_, ok := mans[check.alg]
+		_, ok := mans[check.Alg]
 		if !ok {
-			mans[check.alg] = &Manifest{algorithm: check.alg}
+			mans[check.Alg] = &Manifest{algorithm: check.Alg}
 		}
-		err := mans[check.alg].Append(prefix+check.path, check.actualSum)
+		err := mans[check.Alg].Append(prefix+check.Path, check.SumString())
 		if err != nil {
 			return nil, err
 		}
