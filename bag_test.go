@@ -4,8 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"testing"
+
+	"github.com/srerickson/bago/test"
 )
 
 type TestBagGroup map[string]TestVersionGroup
@@ -13,11 +14,6 @@ type TestBagGroup map[string]TestVersionGroup
 type TestVersionGroup struct {
 	valid   map[string]string
 	invalid map[string]string
-}
-
-func testDataPath() string {
-	_, fPath, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(fPath), `test/bags`)
 }
 
 func testBags() TestBagGroup {
@@ -46,13 +42,13 @@ func testBags() TestBagGroup {
 		}
 		return err
 	}
-	filepath.Walk(testDataPath(), walker)
+	filepath.Walk(test.DataPath([]string{`bags`}), walker)
 	return bags
 }
 
 func TestOpenBag(t *testing.T) {
 
-	_, err := OpenBag(filepath.Join(testDataPath(), `nobaghere`))
+	_, err := OpenBag(test.DataPath([]string{`bags`, `nobaghere`}))
 	if err == nil {
 		t.Error("Expected an error got", err)
 	}

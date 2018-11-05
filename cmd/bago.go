@@ -1,93 +1,93 @@
 package main
 
 import (
-	"encoding/json"
-	"errors"
-	"flag"
 	"fmt"
-	"io/ioutil"
-	"os"
+	"log"
 
+	"github.com/integrii/flaggy"
 	"github.com/srerickson/bago"
+	"github.com/srerickson/bago/checksum"
 )
 
-var (
-	validate  bool
-	create    bool
-	processes int
-	profile   bool
-	algorithm string
-	quiet     bool
-	path      string
-	outPath   string
-	tags      TagFlags
-)
+var version = "unknown"
+var subCmd = make(map[string]*flaggy.Subcommand)
+
+// default parameters
+var processes = 2
+var algorithms = []string{checksum.SHA512}
+var path = `./`
+var outPath = ``
+var tags = []string{}
 
 func init() {
-	flag.BoolVar(&create, `create`, false, `create bag`)
-	flag.BoolVar(&validate, `validate`, false, `validate bag`)
-	flag.StringVar(&algorithm, `algorithm`, `sha512`, `checksum algorithm to use`)
-	flag.IntVar(&processes, `processes`, 1, `number of processes to use`)
-	flag.BoolVar(&profile, `profile`, false, `use profile`)
-	flag.BoolVar(&quiet, `quiet`, false, `no ouput (on STDOUT)`)
-	flag.StringVar(&outPath, `o`, ``, `output path`)
-	flag.Var(&tags, `t`, `set tag`)
-}
+	flaggy.SetName("bago")
+	flaggy.SetDescription("Command Line Tool for creating and validating Bag-It Bags")
 
-func handleErr(err error) {
-	if !quiet {
-		fmt.Fprintln(os.Stderr, err)
-	}
+	// global flags
+	flaggy.Int(&processes, `p`, `procs`, `number of goroutines allocated for checksum`)
+
+	// validate subcommand
+	subCmd[`validate`] = flaggy.NewSubcommand("validate")
+	subCmd[`validate`].Description = "Validate a Bag"
+	subCmd[`validate`].AddPositionalValue(&path, `path`, 1, true, `bag to validate`)
+
+	// create subcommand
+	subCmd[`create`] = flaggy.NewSubcommand("create")
+	subCmd[`create`].Description = "Create a Bag"
+	subCmd[`create`].AddPositionalValue(&path, `path`, 1, true, `folder to bag`)
+	subCmd[`create`].String(&outPath, `o`, `output`, `destination for new bag`)
+	subCmd[`create`].StringSlice(&algorithms, `a`, `algs`, `checksum algorithms`)
+
+	flaggy.AttachSubcommand(subCmd[`validate`], 1)
+	flaggy.AttachSubcommand(subCmd[`create`], 1)
+	flaggy.SetVersion(version)
+	flaggy.Parse()
 }
 
 func main() {
-	flag.Parse()
-	path = flag.Arg(0)
-	if path == `` {
-		err := errors.New(`no path given`)
-		handleErr(err)
-	}
-	if create {
+
+	if subCmd[`create`].Used {
 		opts := bago.CreateBagOptions{
-			SrcDir:     path,
-			Info:       bago.TagFile(tags),
+			SrcDir: path,
+			// Info:       bago.TagFile(tags),
 			DstPath:    outPath,
-			Algorithms: []string{algorithm},
+			Algorithms: algorithms,
 			Workers:    processes,
 			InPlace:    outPath == ``,
 		}
 		_, err := bago.CreateBag(&opts)
 		if err != nil {
-			handleErr(err)
-			os.Exit(1)
+			log.Fatalf(`Could not create bag: %s`, err.Error())
 		}
-	} else if validate {
+		fmt.Println(`Created new bag`)
+	}
+
+	if subCmd[`validate`].Used {
 		bag, err := bago.OpenBag(path)
 		if err != nil {
-			handleErr(err)
-			os.Exit(1)
+			log.Fatalf(`%s is not a bag: %s`, path, err.Error())
 		}
 		if _, err := bag.IsValidConcurrent(processes); err != nil {
-			handleErr(err)
-			os.Exit(1)
+			log.Fatalf(`Bag is invalid: %s`, err.Error())
 		}
-		fmt.Print("bag is valid\n")
-		// fmt.Println(bag.Info.String())
-	} else if profile {
-		profile := bago.Profile{}
-		data, err := ioutil.ReadFile(path)
-		if err != nil {
-			handleErr(err)
-			os.Exit(1)
-		}
-		err = json.Unmarshal(data, &profile)
-		if err != nil {
-			handleErr(err)
-			os.Exit(1)
-		}
-		fmt.Printf("%v\n", profile)
-		for k, v := range profile.BagInfo {
-			fmt.Printf("%s, %v\n", k, v)
-		}
+		fmt.Println(`Bag is valid`)
 	}
+
+	// } else if profile {
+	// 	profile := bago.Profile{}
+	// 	data, err := ioutil.ReadFile(path)
+	// 	if err != nil {
+	// 		handleErr(err)
+	// 		os.Exit(1)
+	// 	}
+	// 	err = json.Unmarshal(data, &profile)
+	// 	if err != nil {
+	// 		handleErr(err)
+	// 		os.Exit(1)
+	// 	}
+	// 	fmt.Printf("%v\n", profile)
+	// 	for k, v := range profile.BagInfo {
+	// 		fmt.Printf("%s, %v\n", k, v)
+	// 	}
+	// }
 }

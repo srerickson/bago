@@ -2,20 +2,14 @@ package checksum
 
 import (
 	"errors"
-	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/srerickson/bago/backend"
+	"github.com/srerickson/bago/test"
 )
 
-func testDataPath() string {
-	_, fPath, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(fPath), `../test/bags`)
-}
-
 func testBag() backend.Backend {
-	test_path := filepath.Join(testDataPath(), "v0.97", "valid", "bag-in-a-bag")
+	test_path := test.DataPath([]string{`bags`, `v0.97`, `valid`, `bag-in-a-bag`})
 	return &backend.FS{Path: test_path}
 }
 

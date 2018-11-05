@@ -47,13 +47,13 @@ func CreateBag(opts *CreateBagOptions) (bag *Bag, err error) {
 			return
 		}
 	} else { // Prepare bag to new destination
+		// FIXME: this doesn't correctly handle existence of dstPath
 		var dstInfo os.FileInfo
 		if dstInfo, err = os.Stat(opts.DstPath); err != nil {
 			if err = os.Mkdir(opts.DstPath, 0755); err != nil {
 				return
 			}
-		}
-		if !dstInfo.IsDir() {
+		} else if !dstInfo.IsDir() {
 			err = fmt.Errorf("expected a directory: %s", opts.DstPath)
 			return
 		}
@@ -62,6 +62,7 @@ func CreateBag(opts *CreateBagOptions) (bag *Bag, err error) {
 			return
 		}
 		buildDir = opts.DstPath
+		fmt.Println(opts.DstPath)
 	}
 	defer func() {
 		if err != nil {

@@ -1,6 +1,6 @@
 module github.com/srerickson/bago
 
 require (
-	github.com/spf13/afero v1.1.2
+	github.com/integrii/flaggy v0.0.0-20181007032133-1056ce330646
 	golang.org/x/text v0.3.0
 )
