@@ -1,24 +1,32 @@
-package bago
+package checksum
 
 import (
 	"errors"
 	"path/filepath"
+	"runtime"
 	"testing"
+
+	"github.com/srerickson/bago/backend"
 )
 
-func testBag() Backend {
+func testDataPath() string {
+	_, fPath, _, _ := runtime.Caller(0)
+	return filepath.Join(filepath.Dir(fPath), `../test/bags`)
+}
+
+func testBag() backend.Backend {
 	test_path := filepath.Join(testDataPath(), "v0.97", "valid", "bag-in-a-bag")
-	return &FSBag{path: test_path}
+	return &backend.FS{Path: test_path}
 }
 
 func TestChecksumBasic(t *testing.T) {
 	for n := 1; n < 4; n++ {
 		results := []string{}
-		c := NewChecksumer(n, testBag(), func(push ChecksumPusher) error {
-			push(ChecksumJob{Path: `bagit.txt`, Alg: MD5})
-			push(ChecksumJob{Path: `bag-info.txt`, Alg: SHA1})
-			push(ChecksumJob{Path: `manifest-md5.txt`, Alg: SHA256})
-			push(ChecksumJob{Path: `tagmanifest-md5.txt`, Alg: SHA512})
+		c := New(n, testBag(), func(push JobPusher) error {
+			push(Job{Path: `bagit.txt`, Alg: MD5})
+			push(Job{Path: `bag-info.txt`, Alg: SHA1})
+			push(Job{Path: `manifest-md5.txt`, Alg: SHA256})
+			push(Job{Path: `tagmanifest-md5.txt`, Alg: SHA512})
 			return nil
 		})
 		for r := range c.Results() {
@@ -35,11 +43,11 @@ func TestChecksumBasic(t *testing.T) {
 
 func TestChecksumCancel(t *testing.T) {
 	results := []string{}
-	c := NewChecksumer(1, testBag(), func(push ChecksumPusher) error {
-		push(ChecksumJob{Path: `bagit.txt`, Alg: MD5})
-		push(ChecksumJob{Path: `bag-info.txt`, Alg: MD5})
-		push(ChecksumJob{Path: `manifest-md5.txt`, Alg: MD5})
-		push(ChecksumJob{Path: `tagmanifest-md5.txt`, Alg: MD5})
+	c := New(1, testBag(), func(push JobPusher) error {
+		push(Job{Path: `bagit.txt`, Alg: MD5})
+		push(Job{Path: `bag-info.txt`, Alg: MD5})
+		push(Job{Path: `manifest-md5.txt`, Alg: MD5})
+		push(Job{Path: `tagmanifest-md5.txt`, Alg: MD5})
 		return nil
 	})
 	go func() {
@@ -58,8 +66,8 @@ func TestChecksumCancel(t *testing.T) {
 
 func TestChecksumPushError(t *testing.T) {
 	results := []string{}
-	c := NewChecksumer(1, testBag(), func(push ChecksumPusher) error {
-		push(ChecksumJob{Path: `bagit.txt`, Alg: MD5})
+	c := New(1, testBag(), func(push JobPusher) error {
+		push(Job{Path: `bagit.txt`, Alg: MD5})
 		return errors.New("a problem")
 	})
 	for r := range c.Results() {

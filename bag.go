@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/srerickson/bago/backend"
+	"github.com/srerickson/bago/checksum"
 )
 
 const (
@@ -18,14 +21,14 @@ const (
 
 // Bag is a bagit repository
 type Bag struct {
-	Backend      Backend     // backend interface (usually FSBag)
-	version      [2]int      // from bagit txt, major and minor ints
-	encoding     string      // from bagit.txt
-	payload      Payload     // contents of the data directory
-	Info         TagFile     // contents of bag-info.txt
-	manifests    []*Manifest // list of payload manifests
-	tagManifests []*Manifest // list of tag file manifests
-	fetch        fetch       // contents of fetch.txt
+	Backend      backend.Backend // backend interface (usually FSBag)
+	version      [2]int          // from bagit txt, major and minor ints
+	encoding     string          // from bagit.txt
+	payload      Payload         // contents of the data directory
+	Info         TagFile         // contents of bag-info.txt
+	manifests    []*Manifest     // list of payload manifests
+	tagManifests []*Manifest     // list of tag file manifests
+	fetch        fetch           // contents of fetch.txt
 }
 
 type Payload map[string]PayloadEntry
@@ -107,10 +110,10 @@ func (b *Bag) IsValid() (bool, error) {
 }
 
 func (b *Bag) ValidateManifests(workers int) (err error) {
-	checker := NewChecksumer(workers, b.Backend, func(push ChecksumPusher) error {
+	checker := checksum.New(workers, b.Backend, func(push checksum.JobPusher) error {
 		for _, m := range append(b.manifests, b.tagManifests...) {
 			for path, entry := range m.entries {
-				j := ChecksumJob{Path: decodePath(path), Alg: m.algorithm}
+				j := checksum.Job{Path: decodePath(path), Alg: m.algorithm}
 				j.Expected, j.Err = hex.DecodeString(entry.sum)
 				push(j)
 			}

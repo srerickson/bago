@@ -1,4 +1,4 @@
-package bago
+package checksum
 
 import (
 	"bytes"
@@ -12,6 +12,8 @@ import (
 	"io"
 	"strings"
 	"sync"
+
+	"github.com/srerickson/bago/backend"
 )
 
 // SHA512 = `sha512`
@@ -26,14 +28,14 @@ const (
 var availableAlgs = [...]string{SHA512, SHA256, SHA224, SHA1, MD5}
 
 type Checksumer struct {
-	jobs    chan ChecksumJob
-	results chan ChecksumJob
+	jobs    chan Job
+	results chan Job
 	cancel  chan struct{}
 	pushErr chan error
-	fs      Backend
+	fs      backend.Backend
 }
 
-type ChecksumJob struct {
+type Job struct {
 	Path     string
 	Alg      string
 	Sum      []byte
@@ -41,31 +43,31 @@ type ChecksumJob struct {
 	Err      error
 }
 
-type ChecksumPusher func(ChecksumJob)
+type JobPusher func(Job)
 
-func (j *ChecksumJob) SumIsExpected() bool {
+func (j *Job) SumIsExpected() bool {
 	return j.Sum != nil && (bytes.Compare(j.Expected, j.Sum) == 0)
 }
 
-func (j *ChecksumJob) SumString() string {
+func (j *Job) SumString() string {
 	return hex.EncodeToString(j.Sum)
 }
 
-func (j *ChecksumJob) ExpectedString() string {
+func (j *Job) ExpectedString() string {
 	return hex.EncodeToString(j.Expected)
 }
 
-func NewChecksumer(wkc int, fs Backend, p func(ChecksumPusher) error) *Checksumer {
+func New(wkc int, fs backend.Backend, p func(JobPusher) error) *Checksumer {
 	c := &Checksumer{
 		fs:      fs,
-		jobs:    make(chan ChecksumJob),
-		results: make(chan ChecksumJob),
+		jobs:    make(chan Job),
+		results: make(chan Job),
 		cancel:  make(chan struct{}),
 		pushErr: make(chan error, 1),
 	}
 	var wg sync.WaitGroup
 	go func() {
-		c.pushErr <- p(func(j ChecksumJob) {
+		c.pushErr <- p(func(j Job) {
 			if c.Canceled() {
 				return
 			}
@@ -91,7 +93,7 @@ func NewChecksumer(wkc int, fs Backend, p func(ChecksumPusher) error) *Checksume
 	return c
 }
 
-func (ch *Checksumer) Check(j *ChecksumJob) error {
+func (ch *Checksumer) Check(j *Job) error {
 	if j.Err != nil {
 		return j.Err
 	}
@@ -111,7 +113,7 @@ func (ch *Checksumer) Check(j *ChecksumJob) error {
 	return nil
 }
 
-func (ch *Checksumer) Results() <-chan ChecksumJob {
+func (ch *Checksumer) Results() <-chan Job {
 	return ch.results
 }
 

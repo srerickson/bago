@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/srerickson/bago/checksum"
 )
 
 const (
@@ -91,7 +93,7 @@ func newManifestFromFilename(filename string) (*Manifest, error) {
 	if len(match) < 3 {
 		return nil, fmt.Errorf("Badly formed manifest filename: %s", filename)
 	}
-	alg, err := NormalizeAlgName(match[2])
+	alg, err := checksum.NormalizeAlgName(match[2])
 	if err != nil {
 		return nil, err
 	}

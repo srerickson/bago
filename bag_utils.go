@@ -6,6 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/srerickson/bago/backend"
+	"github.com/srerickson/bago/checksum"
 )
 
 type CreateBagOptions struct {
@@ -18,7 +21,7 @@ type CreateBagOptions struct {
 }
 
 func OpenBag(path string) (*Bag, error) {
-	backend := &FSBag{path: path}
+	backend := &backend.FS{Path: path}
 	bag := &Bag{Backend: backend}
 	return bag, bag.Hydrate()
 }
@@ -68,7 +71,7 @@ func CreateBag(opts *CreateBagOptions) (bag *Bag, err error) {
 
 	// the new bag
 	bag = &Bag{
-		Backend: &FSBag{path: buildDir},
+		Backend: &backend.FS{Path: buildDir},
 		Info:    opts.Info,
 	}
 	bag.manifests, err = ManfifestsForDir(opts.SrcDir, opts.Algorithms, opts.Workers, `data/`)
@@ -112,16 +115,16 @@ func ManfifestsForDir(dPath string, algs []string, numWorkers int, prefix string
 	}
 	for i := range algs {
 		var err error
-		if algs[i], err = NormalizeAlgName(algs[i]); err != nil {
+		if algs[i], err = checksum.NormalizeAlgName(algs[i]); err != nil {
 			return nil, err
 		}
 	}
-	fs := &FSBag{path: dPath}
+	fs := &backend.FS{Path: dPath}
 	mans := map[string]*Manifest{}
-	sumer := NewChecksumer(numWorkers, fs, func(push ChecksumPusher) error {
+	sumer := checksum.New(numWorkers, fs, func(push checksum.JobPusher) error {
 		return fs.Walk(`.`, func(p string, s int64, err error) error {
 			for _, alg := range algs {
-				push(ChecksumJob{Path: p, Alg: alg, Err: err})
+				push(checksum.Job{Path: p, Alg: alg, Err: err})
 			}
 			return err
 		})
