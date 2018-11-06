@@ -5,12 +5,14 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/srerickson/bago/backend"
 	"github.com/srerickson/bago/checksum"
 )
 
+// CreateBagOptions is used to pass options to CreateBag()
 type CreateBagOptions struct {
 	SrcDir     string
 	DstPath    string
@@ -39,6 +41,16 @@ func CreateBag(opts *CreateBagOptions) (bag *Bag, err error) {
 			return
 		}
 	}
+	//DstPath can't be a subdir of SrcDir
+	var rel string
+	if rel, err = filepath.Rel(opts.SrcDir, opts.DstPath); err != nil {
+		return
+	}
+	if !strings.HasPrefix(rel, `..`) {
+		err = fmt.Errorf("%s is a subdirectory of %s", opts.DstPath, opts.SrcDir)
+		return
+	}
+
 	if opts.InPlace { // Prepare in-place bag creation
 		opts.DstPath = opts.SrcDir
 		baseDir := filepath.Dir(opts.DstPath)
@@ -47,22 +59,27 @@ func CreateBag(opts *CreateBagOptions) (bag *Bag, err error) {
 			return
 		}
 	} else { // Prepare bag to new destination
-		// FIXME: this doesn't correctly handle existence of dstPath
 		var dstInfo os.FileInfo
 		if dstInfo, err = os.Stat(opts.DstPath); err != nil {
+			// If dstPath doesn't exist, try to create it
+			if !os.IsNotExist(err) {
+				return
+			}
 			if err = os.Mkdir(opts.DstPath, 0755); err != nil {
 				return
 			}
-		} else if !dstInfo.IsDir() {
-			err = fmt.Errorf("expected a directory: %s", opts.DstPath)
-			return
-		}
-		opts.DstPath = filepath.Join(opts.DstPath, filepath.Base(opts.SrcDir))
-		if err = os.Mkdir(opts.DstPath, 0755); err != nil {
-			return
+		} else {
+			// If dstPath exists, treat as parent dir for new bag
+			if !dstInfo.IsDir() {
+				err = fmt.Errorf("expected a directory: %s", opts.DstPath)
+				return
+			}
+			opts.DstPath = filepath.Join(opts.DstPath, filepath.Base(opts.SrcDir))
+			if err = os.Mkdir(opts.DstPath, 0755); err != nil {
+				return
+			}
 		}
 		buildDir = opts.DstPath
-		fmt.Println(opts.DstPath)
 	}
 	defer func() {
 		if err != nil {
@@ -86,7 +103,7 @@ func CreateBag(opts *CreateBagOptions) (bag *Bag, err error) {
 		return nil, err
 	}
 	bag.Info.Set(`Bag-Date`, time.Now().Format("2006-01-02"))
-	bag.Info.Set(`Long-Text-Entry`, `This is very very long text that should trigger the line wrap functions. Hope it works!`)
+	bag.Info.Set(`Bag-Software-Agent`, `bago`)
 	if err = bag.WriteBagInfo(); err != nil {
 		return nil, err
 	}
