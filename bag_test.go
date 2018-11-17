@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"testing"
 
 	"github.com/srerickson/bago/test"
@@ -58,16 +59,16 @@ func TestIsValid(t *testing.T) {
 	for version, group := range testBags() {
 		for name, path := range group.valid {
 			bag, _ := OpenBag(path)
-			isValid, _ := bag.IsValidConcurrent(20)
+			isValid, err := bag.IsValidConcurrent(runtime.GOMAXPROCS(0))
 			if !isValid {
-				t.Error("Valid test bag should be valid:", version, name)
+				t.Errorf("Valid test bag should be valid (%s, %s): %s", version, name, err.Error())
 			}
 		}
 		for name, path := range group.invalid {
 			bag, _ := OpenBag(path)
-			isValid, _ := bag.IsValid()
+			isValid, _ := bag.IsValidConcurrent(runtime.GOMAXPROCS(0))
 			if isValid {
-				t.Error("Invalid test bag should be invalid:", version, name)
+				t.Errorf("Invalid bag should be invalid (%s, %s)", version, name)
 			}
 		}
 	}
