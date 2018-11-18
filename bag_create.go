@@ -23,8 +23,7 @@ type CreateBagOptions struct {
 }
 
 func OpenBag(path string) (*Bag, error) {
-	backend := &backend.FS{Path: path}
-	bag := &Bag{Backend: backend}
+	bag := &Bag{Backend: &backend.FS{Path: path}}
 	return bag, bag.Hydrate()
 }
 
@@ -87,10 +86,12 @@ func CreateBag(opts *CreateBagOptions) (bag *Bag, err error) {
 		}
 	}()
 
-	// the new bag
+	// tmp Bag
 	bag = &Bag{
-		Backend: &backend.FS{Path: buildDir},
-		Info:    opts.Info,
+		Backend:  &backend.FS{Path: buildDir},
+		Info:     opts.Info,
+		encoding: `UTF-8`,
+		version:  [...]int{0, 97},
 	}
 	bag.manifests, err = ManfifestsForDir(opts.SrcDir, opts.Algorithms, opts.Workers, `data/`)
 	if err != nil {
@@ -122,7 +123,8 @@ func CreateBag(opts *CreateBagOptions) (bag *Bag, err error) {
 			return nil, err
 		}
 	}
-	return bag, nil
+	bag, err = OpenBag(opts.DstPath)
+	return
 }
 
 // Manifests for Dir returns a slice of manifests describing contents of a
@@ -140,7 +142,7 @@ func ManfifestsForDir(dPath string, algs []string, numWorkers int, prefix string
 	fs := &backend.FS{Path: dPath}
 	mans := map[string]*Manifest{}
 	sumer := checksum.New(numWorkers, fs, func(push checksum.JobPusher) error {
-		return fs.Walk(`.`, func(p string, s int64, err error) error {
+		return fs.Walk(`.`, func(p string, fi os.FileInfo, err error) error {
 			for _, alg := range algs {
 				push(checksum.Job{Path: p, Alg: alg, Err: err})
 			}

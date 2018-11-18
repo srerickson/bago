@@ -43,13 +43,13 @@ func testBags() TestBagGroup {
 		}
 		return err
 	}
-	filepath.Walk(test.DataPath([]string{`bags`}), walker)
+	filepath.Walk(test.Path([]string{`bags`}), walker)
 	return bags
 }
 
 func TestOpenBag(t *testing.T) {
 
-	_, err := OpenBag(test.DataPath([]string{`bags`, `nobaghere`}))
+	_, err := OpenBag(test.Path([]string{`bags`, `nobaghere`}))
 	if err == nil {
 		t.Error("Expected an error got", err)
 	}
