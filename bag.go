@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/srerickson/bago/backend"
@@ -21,14 +24,14 @@ const (
 
 // Bag is a bagit repository
 type Bag struct {
-	Backend      backend.Backend // backend interface (usually FSBag)
-	version      [2]int          // from bagit txt, major and minor ints
-	encoding     string          // from bagit.txt
-	payload      Payload         // contents of the data directory
-	Info         TagFile         // contents of bag-info.txt
-	manifests    []*Manifest     // list of payload manifests
-	tagManifests []*Manifest     // list of tag file manifests
-	fetch        fetch           // contents of fetch.txt
+	backend.Backend             // backend interface (usually FSBag)
+	version         [2]int      // from bagit txt, major and minor ints
+	encoding        string      // from bagit.txt
+	payload         Payload     // contents of the data directory
+	Info            TagFile     // contents of bag-info.txt
+	manifests       []*Manifest // list of payload manifests
+	tagManifests    []*Manifest // list of tag file manifests
+	fetch           fetch       // contents of fetch.txt
 }
 
 type Payload map[string]PayloadEntry
@@ -110,7 +113,7 @@ func (b *Bag) IsValid() (bool, error) {
 }
 
 func (b *Bag) ValidateManifests(workers int) (err error) {
-	checker := checksum.New(workers, b.Backend, func(push checksum.JobPusher) error {
+	checker := checksum.New(workers, b, func(push checksum.JobPusher) error {
 		for _, m := range append(b.manifests, b.tagManifests...) {
 			for path, entry := range m.entries {
 				j := checksum.Job{Path: decodePath(path), Alg: m.algorithm}
@@ -137,7 +140,7 @@ func (bag *Bag) missingTagFiles() []string {
 	missing := []string{}
 	for _, m := range bag.tagManifests {
 		for _, tEntry := range m.entries {
-			_, err := bag.Backend.Stat(tEntry.rawPath)
+			_, err := bag.Stat(tEntry.rawPath)
 			if err != nil {
 				missing = append(missing, err.Error())
 			}
@@ -180,13 +183,13 @@ func (b *Bag) notInManifests(thresh int) []string {
 // File paths are noramilzed with encodePath
 func (bag *Bag) readPayload() error {
 	bag.payload = Payload{}
-	return bag.Backend.Walk(dataDir, func(path string, size int64, err error) error {
+	return bag.Walk(dataDir, func(path string, info os.FileInfo, err error) error {
 		if err == nil {
 			encPath := encodePath(path)
 			if _, exists := bag.payload[encPath]; exists {
 				return fmt.Errorf("path encoding collision: %s", path)
 			}
-			bag.payload[encPath] = PayloadEntry{rawPath: path, size: size}
+			bag.payload[encPath] = PayloadEntry{rawPath: path, size: info.Size()}
 		}
 		return err
 	})
@@ -203,21 +206,25 @@ func (bag *Bag) readManifest(name string) (*Manifest, error) {
 
 // read and pars all manifests (both payload and tag manifests)
 func (bag *Bag) readAllManifests() error {
-	for _, manName := range bag.Backend.AllManifests() {
-		man, err := bag.readManifest(manName)
-		if err != nil {
-			return err
+	re := regexp.MustCompile(`(tag)?manifest-\w+.txt`)
+	return bag.Walk(``, func(p string, i os.FileInfo, e error) error {
+		if strings.HasPrefix(p, `data`+string(os.PathSeparator)) {
+			return filepath.SkipDir
 		}
-		switch man.kind {
-		case payloadManifest:
-			bag.manifests = append(bag.manifests, man)
-		case tagManifest:
-			bag.tagManifests = append(bag.tagManifests, man)
-		default:
-			return fmt.Errorf("Unexpected manifest type: %s", manName)
+		if re.MatchString(p) {
+			man, err := bag.readManifest(p)
+			if err != nil {
+				return err
+			}
+			switch man.kind {
+			case payloadManifest:
+				bag.manifests = append(bag.manifests, man)
+			case tagManifest:
+				bag.tagManifests = append(bag.tagManifests, man)
+			}
 		}
-	}
-	return nil
+		return e
+	})
 }
 
 // read and parse bagit.txt
@@ -243,7 +250,7 @@ func (bag *Bag) readBagInfo() error {
 
 // read and parse fetch.txt
 func (bag *Bag) readFetchFile() error {
-	_, err := bag.Backend.Stat(fetchTxt)
+	_, err := bag.Stat(fetchTxt)
 	if err != nil {
 		return nil // not an error if fetch doesn't exist
 	}
@@ -259,7 +266,7 @@ type parser interface {
 // parse is a helper function for parsing compontent files in a bag.
 // It wraps the logic opening, decoding, and parsing the bag.
 func (bag *Bag) parse(parser parser, name string, encoding string) error {
-	reader, err := bag.Backend.Open(name)
+	reader, err := bag.Open(name)
 	defer reader.Close()
 	if err != nil {
 		return err
@@ -323,7 +330,7 @@ type bagComponent interface {
 
 func (bag *Bag) write(path string, writer bagComponent) (err error) {
 	var file io.WriteCloser
-	if file, err = bag.Backend.Create(path); err != nil {
+	if file, err = bag.Create(path); err != nil {
 		return err
 	}
 	if err = writer.Write(file); err != nil {

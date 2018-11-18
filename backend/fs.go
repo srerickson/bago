@@ -1,7 +1,6 @@
 package backend
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,17 +11,8 @@ type FS struct {
 	Path string
 }
 
-func (be *FS) Stat(path string) (FileInfo, error) {
-	fi := FileInfo{}
-	info, err := os.Stat(filepath.Join(be.Path, path))
-	if err != nil {
-		return fi, err
-	}
-	if info.IsDir() {
-		return fi, fmt.Errorf("%s is a directory", path)
-	}
-	fi.Path, fi.Size = path, info.Size()
-	return fi, nil
+func (be *FS) Stat(path string) (os.FileInfo, error) {
+	return os.Stat(filepath.Join(be.Path, path))
 }
 
 func (be *FS) Open(path string) (io.ReadCloser, error) {
@@ -33,24 +23,13 @@ func (be *FS) Create(path string) (io.WriteCloser, error) {
 	return os.Create(filepath.Join(be.Path, path))
 }
 
-func (be *FS) Walk(p string, f func(string, int64, error) error) error {
+func (be *FS) Walk(p string, f filepath.WalkFunc) error {
 	wrapF := func(path string, fi os.FileInfo, err error) error {
-		if err != nil || (fi != nil && fi.IsDir()) {
+		if err != nil || !fi.Mode().IsRegular() {
 			return err
 		}
 		relPath, _ := filepath.Rel(be.Path, path)
-		return f(relPath, fi.Size(), err)
+		return f(relPath, fi, err)
 	}
 	return filepath.Walk(filepath.Join(be.Path, p), wrapF)
-}
-
-func (be *FS) AllManifests() []string {
-	manFiles, err := filepath.Glob(filepath.Join(be.Path, "*manifest-*.txt"))
-	for i := range manFiles {
-		manFiles[i], _ = filepath.Rel(be.Path, manFiles[i])
-	}
-	if err != nil {
-		return nil
-	}
-	return manFiles
 }

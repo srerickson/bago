@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"runtime"
 
 	"github.com/integrii/flaggy"
 	"github.com/srerickson/bago"
@@ -13,7 +14,7 @@ var version = "unknown"
 var subCmd = make(map[string]*flaggy.Subcommand)
 
 // default parameters
-var processes = 2
+var processes = runtime.GOMAXPROCS(0)
 var algorithms = []string{checksum.SHA512}
 var path = `./`
 var outPath = ``
@@ -38,8 +39,9 @@ func init() {
 	subCmd[`create`].String(&outPath, `o`, `output`, `destination for new bag`)
 	subCmd[`create`].StringSlice(&algorithms, `a`, `algs`, `checksum algorithms`)
 
-	flaggy.AttachSubcommand(subCmd[`validate`], 1)
-	flaggy.AttachSubcommand(subCmd[`create`], 1)
+	for i := range subCmd {
+		flaggy.AttachSubcommand(subCmd[i], 1)
+	}
 	flaggy.SetVersion(version)
 	flaggy.Parse()
 }

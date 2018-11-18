@@ -2,17 +2,13 @@ package backend
 
 import (
 	"io"
+	"os"
+	"path/filepath"
 )
 
-type FileInfo struct {
-	Path string // path should be relative to bag
-	Size int64
-}
-
 type Backend interface {
-	Stat(string) (FileInfo, error) // should throw error for directories
+	Stat(string) (os.FileInfo, error) // should throw error for directories
 	Open(string) (io.ReadCloser, error)
 	Create(string) (io.WriteCloser, error)
-	AllManifests() []string
-	Walk(string, func(string, int64, error) error) error
+	Walk(root string, walkFn filepath.WalkFunc) error
 }
