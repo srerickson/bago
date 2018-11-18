@@ -9,7 +9,7 @@ import (
 )
 
 func testBag() backend.Backend {
-	test_path := test.DataPath([]string{`bags`, `v0.97`, `valid`, `bag-in-a-bag`})
+	test_path := test.Path([]string{`bags`, `v0.97`, `valid`, `bag-in-a-bag`})
 	return &backend.FS{Path: test_path}
 }
 
