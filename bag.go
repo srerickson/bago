@@ -1,7 +1,6 @@
 package bago
 
 import (
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -34,11 +33,11 @@ type Bag struct {
 	fetch           fetch       // contents of fetch.txt
 }
 
-type Payload map[string]PayloadEntry
+type Payload map[NormPath]PayloadEntry
 
 type PayloadEntry struct {
-	rawPath string
-	size    int64
+	path string
+	size int64
 }
 
 // TODO bad function name
@@ -115,9 +114,9 @@ func (b *Bag) IsValid() (bool, error) {
 func (b *Bag) ValidateManifests(workers int) (err error) {
 	checker := checksum.New(workers, b, func(push checksum.JobPusher) error {
 		for _, m := range append(b.manifests, b.tagManifests...) {
-			for path, entry := range m.entries {
-				j := checksum.Job{Path: decodePath(path), Alg: m.algorithm}
-				j.Expected, j.Err = hex.DecodeString(entry.sum)
+			for _, entry := range m.entries {
+				j := checksum.Job{Path: entry.path, Alg: m.algorithm}
+				j.Expected = entry.sum
 				push(j)
 			}
 		}
@@ -139,8 +138,8 @@ func (b *Bag) ValidateManifests(workers int) (err error) {
 func (bag *Bag) missingTagFiles() []string {
 	missing := []string{}
 	for _, m := range bag.tagManifests {
-		for _, tEntry := range m.entries {
-			_, err := bag.Stat(tEntry.rawPath)
+		for _, entry := range m.entries {
+			_, err := bag.Stat(entry.path)
 			if err != nil {
 				missing = append(missing, err.Error())
 			}
@@ -153,9 +152,9 @@ func (bag *Bag) missingTagFiles() []string {
 func (b *Bag) notInPayload() []string {
 	missing := []string{}
 	for _, m := range b.manifests {
-		for mPath := range m.entries {
-			if _, ok := b.payload[mPath]; !ok {
-				missing = append(missing, mPath)
+		for p := range m.entries {
+			if _, ok := b.payload[p]; !ok {
+				missing = append(missing, string(p))
 			}
 		}
 	}
@@ -165,13 +164,13 @@ func (b *Bag) notInPayload() []string {
 // notInManifests scans payload for files not accounted for in manifests
 // thesh is the min number of manifests that a file can be missing from
 func (b *Bag) notInManifests(thresh int) []string {
-	counts := make(map[string]int)
+	counts := make(map[NormPath]int)
 	missing := []string{}
 	for pPath := range b.payload {
 		for _, man := range b.manifests {
 			if _, ok := man.entries[pPath]; !ok {
 				if counts[pPath]++; counts[pPath] > thresh {
-					missing = append(missing, pPath)
+					missing = append(missing, string(pPath))
 				}
 			}
 		}
@@ -185,11 +184,11 @@ func (bag *Bag) readPayload() error {
 	bag.payload = Payload{}
 	return bag.Walk(dataDir, func(path string, info os.FileInfo, err error) error {
 		if err == nil {
-			encPath := encodePath(path)
-			if _, exists := bag.payload[encPath]; exists {
+			normPath := EncodePath(path).Norm()
+			if _, exists := bag.payload[normPath]; exists {
 				return fmt.Errorf("path encoding collision: %s", path)
 			}
-			bag.payload[encPath] = PayloadEntry{rawPath: path, size: info.Size()}
+			bag.payload[normPath] = PayloadEntry{path: path, size: info.Size()}
 		}
 		return err
 	})

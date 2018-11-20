@@ -13,7 +13,7 @@ type fetch []fetchEntry
 type fetchEntry struct {
 	url  string
 	size string
-	path string
+	path EncPath
 }
 
 func (f *fetch) parse(reader io.Reader) error {
@@ -36,8 +36,8 @@ func (f *fetch) parse(reader io.Reader) error {
 		entry.url = strings.Trim(match[1], ` `)
 		entry.size = strings.Trim(match[2], ` `)
 		match[3] = strings.Trim(match[3], ` `)
-		entry.path = filepath.Clean(decodePath(match[3]))
-		if strings.HasPrefix(entry.path, `..`) {
+		entry.path = EncPath(filepath.Clean(match[3]))
+		if strings.HasPrefix(string(entry.path), `..`) {
 			return fmt.Errorf("Out of scope path at line: %d", lineNum)
 		}
 		*f = append(*f, entry)

@@ -2,6 +2,7 @@ package bago
 
 import (
 	"bufio"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -20,26 +21,26 @@ const (
 //Manifest represents a payload manifest file
 type Manifest struct {
 	algorithm string
-	entries   map[string]*ManifestEntry // key is encoded file path
-	kind      int                       // tag or payload
+	entries   map[NormPath]ManifestEntry // key is unicode normalized
+	kind      int                        // tag or payload
 }
 
 type ManifestEntry struct {
-	rawPath string
-	sum     string // checksum
+	path string // raw file system path
+	sum  []byte
 }
 
 // Append adds a new entry to the manifest. It returns an error if the
 // entry already exists. The path is encoded.
-func (man *Manifest) Append(path string, sum string) error {
+func (man *Manifest) Append(path EncPath, sum []byte) error {
 	if man.entries == nil {
-		man.entries = map[string]*ManifestEntry{}
+		man.entries = map[NormPath]ManifestEntry{}
 	}
-	encPath := encodePath(path)
-	if _, exists := man.entries[encPath]; exists {
+	var normPath = path.Norm()
+	if _, exists := man.entries[normPath]; exists {
 		return fmt.Errorf("duplicate entry")
 	}
-	man.entries[encPath] = &ManifestEntry{rawPath: path, sum: sum}
+	man.entries[normPath] = ManifestEntry{path: path.Decode(), sum: sum}
 	return nil
 }
 
@@ -53,13 +54,16 @@ func (man *Manifest) parse(reader io.Reader) error {
 		if len(match) < 3 {
 			return fmt.Errorf("Syntax error at line: %d", lineNum)
 		}
-		cleanPath := filepath.Clean(decodePath(match[2]))
+		cleanPath := filepath.Clean(match[2])
 		if strings.HasPrefix(cleanPath, `..`) {
 			return fmt.Errorf("Out of scope path at line: %d", lineNum)
 		}
-		sum := strings.Trim(match[1], ` `)
-		err := man.Append(cleanPath, sum)
-		if err != nil {
+		var sum []byte
+		var err error
+		if sum, err = hex.DecodeString(strings.Trim(match[1], ` `)); err != nil {
+			return fmt.Errorf("line %d: %s", lineNum, err.Error())
+		}
+		if err = man.Append(EncPath(cleanPath), sum); err != nil {
 			return fmt.Errorf("line %d: %s", lineNum, err.Error())
 		}
 	}
@@ -70,8 +74,10 @@ func (man *Manifest) parse(reader io.Reader) error {
 }
 
 func (man *Manifest) Write(writer io.Writer) error {
-	for k, v := range man.entries {
-		if _, err := fmt.Fprintf(writer, "%s %s\n", v.sum, k); err != nil {
+	for _, e := range man.entries {
+		sum := hex.EncodeToString(e.sum)
+		path := EncodePath(e.path)
+		if _, err := fmt.Fprintf(writer, "%s %s\n", sum, path); err != nil {
 			return err
 		}
 	}

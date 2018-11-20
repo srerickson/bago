@@ -154,7 +154,7 @@ func ManfifestsForDir(dPath string, algs []string, numWorkers int, prefix string
 		if !ok {
 			mans[check.Alg] = &Manifest{algorithm: check.Alg}
 		}
-		err := mans[check.Alg].Append(prefix+check.Path, check.SumString())
+		err := mans[check.Alg].Append(EncodePath(prefix+check.Path), check.Sum)
 		if err != nil {
 			return nil, err
 		}
