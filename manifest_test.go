@@ -7,13 +7,17 @@ import (
 
 func TestManifestAppend(t *testing.T) {
 	m := Manifest{}
-	p := EncPath("afile%0Awith%0Dspecial characters")
-	m.Append(p, nil)
-	entry, exists := m.entries[p.Norm()]
+	p := "afile\nwith\rspecial characters"
+	encP := EncodePath(p)
+	if string(encP) != "afile%0Awith%0Dspecial characters" {
+		t.Errorf(`EncodePath is broken. Got: %s`, encP)
+	}
+	m.Append(encP, nil)
+	entry, exists := m.entries[EncodePath(p).Norm()]
 	if !exists {
 		t.Error(`Append failed`)
 	}
-	if entry.path != "afile\nwith\rspecial characters" {
+	if entry.path != p {
 		t.Errorf(`Appended path not decoded correctly. Got: %s`, entry.path)
 	}
 }

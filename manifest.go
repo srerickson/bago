@@ -54,8 +54,8 @@ func (man *Manifest) parse(reader io.Reader) error {
 		if len(match) < 3 {
 			return fmt.Errorf("Syntax error at line: %d", lineNum)
 		}
-		cleanPath := filepath.Clean(match[2])
-		if strings.HasPrefix(cleanPath, `..`) {
+		cleanEncPath := filepath.ToSlash(filepath.Clean(match[2]))
+		if strings.HasPrefix(cleanEncPath, `..`) {
 			return fmt.Errorf("Out of scope path at line: %d", lineNum)
 		}
 		var sum []byte
@@ -63,7 +63,7 @@ func (man *Manifest) parse(reader io.Reader) error {
 		if sum, err = hex.DecodeString(strings.Trim(match[1], ` `)); err != nil {
 			return fmt.Errorf("line %d: %s", lineNum, err.Error())
 		}
-		if err = man.Append(EncPath(cleanPath), sum); err != nil {
+		if err = man.Append(EncPath(cleanEncPath), sum); err != nil {
 			return fmt.Errorf("line %d: %s", lineNum, err.Error())
 		}
 	}
