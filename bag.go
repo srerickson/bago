@@ -80,17 +80,17 @@ func (b *Bag) IsComplete() (bool, error) {
 	missing := b.notInPayload()
 	if len(missing) > 0 {
 		msg := "Manifest files missing from payload:"
-		return false, fmt.Errorf("%s %s", msg, strings.Join(missing, `\n -`))
+		return false, fmt.Errorf("%s %s", msg, strings.Join(missing, "\n -"))
 	}
 	missing = b.notInManifests(0)
 	if len(missing) > 0 {
 		msg := "Payload files missing from manifest:"
-		return false, fmt.Errorf("%s %s", msg, strings.Join(missing, `\n -`))
+		return false, fmt.Errorf("%s %s", msg, strings.Join(missing, "\n -"))
 	}
 	missing = b.missingTagFiles()
 	if len(missing) > 0 {
 		msg := "Tagfiles missing from tag manifests:"
-		return false, fmt.Errorf("%s %s", msg, strings.Join(missing, `\n -`))
+		return false, fmt.Errorf("%s %s", msg, strings.Join(missing, "\n -"))
 	}
 	return true, nil
 }

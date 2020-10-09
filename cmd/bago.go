@@ -10,11 +10,21 @@ import (
 	"github.com/srerickson/bago/checksum"
 )
 
+const (
+	colorReset = "\033[0m"
+	colorRed   = "\033[31m"
+	colorGreen = "\033[32m"
+)
+
+var redErr = colorRed + "[ERR]" + colorReset
+var greenOK = colorGreen + "[OK]" + colorReset
+
 var version = "unknown"
 var subCmd = make(map[string]*flaggy.Subcommand)
 
 // default parameters
 var processes = runtime.GOMAXPROCS(0)
+var verbose = false
 var algorithms = []string{checksum.SHA512}
 var path = `./`
 var outPath = ``
@@ -26,6 +36,7 @@ func init() {
 
 	// global flags
 	flaggy.Int(&processes, `p`, `procs`, `number of goroutines allocated for checksum`)
+	flaggy.Bool(&verbose, `v`, `verbose`, `verbose validation`)
 
 	// validate subcommand
 	subCmd[`validate`] = flaggy.NewSubcommand("validate")
@@ -67,12 +78,16 @@ func main() {
 	if subCmd[`validate`].Used {
 		bag, err := bago.OpenBag(path)
 		if err != nil {
-			log.Fatalf(`%s is not a bag: %s`, path, err.Error())
+			log.Fatalf(`%s Not a bag: %s`, redErr, path)
 		}
 		if _, err := bag.IsValidConcurrent(processes); err != nil {
-			log.Fatalf(`Bag is invalid: %s`, err.Error())
+			if verbose {
+				log.Fatalf("%s Bag is invalid: %s\n Errors:%s", redErr, path, err.Error())
+				return
+			}
+			log.Fatalf("%s Bag is invalid: %s", redErr, path)
 		}
-		fmt.Println(`Bag is valid`)
+		log.Printf("%s Bag is valid: %s", greenOK, path)
 	}
 
 	// } else if profile {
